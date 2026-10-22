@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 import { AuthLayout } from '../components/AuthLayout'
 import { Button } from '../components/Button'
 import { ErrorBanner } from '../components/ErrorBanner'
@@ -9,6 +9,7 @@ import { api, type AuthResponse, type RecoverResponse } from '../lib/api'
 
 type LoginPageProps = {
   onSuccess: (response: AuthResponse) => void
+  onSetup: () => void
   initialError?: string
 }
 
@@ -16,13 +17,18 @@ type LoginFormProps = {
   initialError: string
   onSuccess: (response: AuthResponse) => void
   onForgot: () => void
+  onSetup: () => void
 }
 
-function LoginForm({ initialError, onSuccess, onForgot }: LoginFormProps) {
+function LoginForm({ initialError, onSuccess, onForgot, onSetup }: LoginFormProps) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState(initialError)
   const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    if (initialError) setError(initialError)
+  }, [initialError])
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -73,6 +79,17 @@ function LoginForm({ initialError, onSuccess, onForgot }: LoginFormProps) {
           className="text-[12px] font-medium text-muted underline-offset-2 transition-colors hover:text-accent hover:underline"
         >
           Esqueci minha senha
+        </button>
+      </div>
+
+      <div className="mt-2 text-center text-[11px] leading-5 text-muted">
+        Primeiro acesso?{' '}
+        <button
+          type="button"
+          onClick={onSetup}
+          className="font-medium text-paper/90 underline-offset-2 transition-colors hover:text-accent hover:underline"
+        >
+          Criar conta
         </button>
       </div>
     </AuthLayout>
@@ -165,6 +182,18 @@ function RecoverForm({ onBack, onRecovered }: RecoverFormProps) {
         </Button>
       </form>
 
+      <details className="mt-3 rounded-xl border border-line bg-ink/40 px-3.5 py-2.5 text-[11px] leading-4 text-muted">
+        <summary className="cursor-pointer font-medium text-paper/90">Não tenho o código</summary>
+        <p className="mt-2">
+          O código foi mostrado uma única vez na criação da conta, no formato
+          <span className="font-mono text-paper/80"> XXXX-XXXX-XXXX</span>.
+        </p>
+        <p className="mt-2">Sem ele, o dono do servidor pode redefinir a senha:</p>
+        <code className="mt-1 block break-all rounded-lg bg-black/40 p-2 font-mono text-[10px] text-paper/80">
+          docker compose exec --user interpres interpres python -m app.cli reset-password --email seu@email.com
+        </code>
+      </details>
+
       <div className="mt-3.5 text-center">
         <button
           type="button"
@@ -178,7 +207,7 @@ function RecoverForm({ onBack, onRecovered }: RecoverFormProps) {
   )
 }
 
-export function LoginPage({ onSuccess, initialError = '' }: LoginPageProps) {
+export function LoginPage({ onSuccess, onSetup, initialError = '' }: LoginPageProps) {
   const [mode, setMode] = useState<'login' | 'recover'>('login')
   const [recovered, setRecovered] = useState<RecoverResponse | null>(null)
 
@@ -218,6 +247,7 @@ export function LoginPage({ onSuccess, initialError = '' }: LoginPageProps) {
       initialError={initialError}
       onSuccess={onSuccess}
       onForgot={() => setMode('recover')}
+      onSetup={onSetup}
     />
   )
 }

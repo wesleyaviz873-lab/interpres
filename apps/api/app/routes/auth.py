@@ -1,4 +1,4 @@
-"""First-run setup, login, recovery and account endpoints."""
+﻿"""First-run setup, login, recovery and account endpoints."""
 
 from __future__ import annotations
 
@@ -8,6 +8,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from ..accounts import find_user_by_email, normalize_email, set_recovery_code
 from ..auth import (
     audit,
     clear_session_cookie,
@@ -20,12 +21,7 @@ from ..config import settings
 from ..database import get_db
 from ..models import AuthSession, User, utcnow
 from ..rate_limit import RateLimiter
-from ..security import (
-    hash_password,
-    new_recovery_code,
-    normalize_recovery_code,
-    verify_password,
-)
+from ..security import hash_password, normalize_recovery_code, verify_password
 
 router = APIRouter(prefix="/api", tags=["auth"])
 
@@ -65,20 +61,12 @@ class RecoveryCodeRequest(BaseModel):
     current_password: str = Field(min_length=1, max_length=200)
 
 
-def _normalize_email(email: str) -> str:
-    return email.strip().lower()
-
-
 def _user_response(user: User) -> dict[str, object]:
     return {
         "id": user.id,
         "email": user.email,
         "created_at": user.created_at.isoformat(),
     }
-
-
-def _find_user(db: Session, email: str) -> User | None:
-    return db.scalar(select(User).where(User.email == _normalize_email(email)))
 
 
 def _require_current_password(user: User, password: str) -> None:
@@ -95,12 +83,6 @@ def _ensure_new_password(current: str, new: str) -> None:
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="A nova senha precisa ser diferente da senha atual.",
         )
-
-
-def _set_recovery_code(user: User) -> str:
-    code = new_recovery_code()
-    user.recovery_code_hash = hash_password(normalize_recovery_code(code))
-    return code
 
 
 @router.get("/setup/status")
@@ -120,12 +102,12 @@ def setup(
     if total > 0:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Esta instalação já tem um dono. Use o login.",
+            detail="Esta instalaÃ§Ã£o jÃ¡ tem um dono. Use o login.",
         )
 
-    email = _normalize_email(str(body.email))
+    email = normalize_email(str(body.email))
     user = User(email=email, password_hash=hash_password(body.password))
-    recovery_code = _set_recovery_code(user)
+    recovery_code = set_recovery_code(user)
     db.add(user)
     db.commit()
     db.refresh(user)
@@ -147,7 +129,7 @@ def login(
     response: Response,
     db: Session = Depends(get_db),
 ) -> dict[str, object]:
-    email = _normalize_email(str(body.email))
+    email = normalize_email(str(body.email))
     limit_key = f"login:{request.client.host if request.client else 'unknown'}:{email}"
     if not _limiter.allow(limit_key):
         raise HTTPException(
@@ -155,13 +137,13 @@ def login(
             detail="Muitas tentativas. Tente novamente em alguns minutos.",
         )
 
-    user = _find_user(db, email)
+    user = find_user_by_email(db, email)
     if not user or not verify_password(body.password, user.password_hash):
         _limiter.hit(limit_key)
         audit(db, "auth.login_failed", user.id if user else None, request, email)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="E-mail ou senha inválidos.",
+            detail="E-mail ou senha invÃ¡lidos.",
         )
 
     _limiter.reset(limit_key)
@@ -177,7 +159,7 @@ def recover(
     response: Response,
     db: Session = Depends(get_db),
 ) -> dict[str, object]:
-    email = _normalize_email(str(body.email))
+    email = normalize_email(str(body.email))
     limit_key = f"recover:{request.client.host if request.client else 'unknown'}:{email}"
     if not _limiter.allow(limit_key):
         raise HTTPException(
@@ -185,7 +167,7 @@ def recover(
             detail="Muitas tentativas. Tente novamente em alguns minutos.",
         )
 
-    user = _find_user(db, email)
+    user = find_user_by_email(db, email)
     code = normalize_recovery_code(body.recovery_code)
     valid = bool(
         user
@@ -198,12 +180,12 @@ def recover(
         audit(db, "auth.recovery_failed", user.id if user else None, request, email)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="E-mail ou código de recuperação inválidos.",
+            detail="E-mail ou cÃ³digo de recuperaÃ§Ã£o invÃ¡lidos.",
         )
 
     _limiter.reset(limit_key)
     user.password_hash = hash_password(body.new_password)
-    new_code = _set_recovery_code(user)
+    new_code = set_recovery_code(user)
     db.execute(delete(AuthSession).where(AuthSession.user_id == user.id))
     db.commit()
 
@@ -248,13 +230,13 @@ def change_email(
     db: Session = Depends(get_db),
 ) -> dict[str, object]:
     _require_current_password(user, body.current_password)
-    new_email = _normalize_email(str(body.new_email))
+    new_email = normalize_email(str(body.new_email))
 
-    existing = _find_user(db, new_email)
+    existing = find_user_by_email(db, new_email)
     if existing and existing.id != user.id:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Este e-mail já está em uso.",
+            detail="Este e-mail jÃ¡ estÃ¡ em uso.",
         )
 
     user.email = new_email
@@ -264,7 +246,7 @@ def change_email(
         db.rollback()
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Este e-mail já está em uso.",
+            detail="Este e-mail jÃ¡ estÃ¡ em uso.",
         ) from None
 
     audit(db, "auth.email_changed", user.id, request, new_email)
@@ -279,7 +261,7 @@ def rotate_recovery_code(
     db: Session = Depends(get_db),
 ) -> dict[str, str]:
     _require_current_password(user, body.current_password)
-    code = _set_recovery_code(user)
+    code = set_recovery_code(user)
     db.commit()
     audit(db, "auth.recovery_code_rotated", user.id, request)
     return {"recovery_code": code}
@@ -345,3 +327,4 @@ def session_info(
         ),
         "session_ttl": settings.session_ttl_hours * 3600,
     }
+

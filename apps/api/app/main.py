@@ -49,6 +49,8 @@ async def security_headers(request, call_next):
     )
     if settings.is_production:
         response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+    if request.url.path == "/" or request.url.path.endswith("index.html"):
+        response.headers["Cache-Control"] = "no-store"
     return response
 
 

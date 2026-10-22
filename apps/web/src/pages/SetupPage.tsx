@@ -58,6 +58,14 @@ export function SetupPage({ onSuccess }: SetupPageProps) {
             <p>Ele aparece uma única vez e não pode ser consultado depois. Não feche esta página antes de guardar.</p>
           </div>
 
+          <p className="text-[11px] leading-4 text-muted">
+            Sem o código, o dono do servidor pode redefinir a senha com{' '}
+            <code className="break-all font-mono text-[10px] text-paper/80">
+              docker compose exec --user interpres interpres python -m app.cli reset-password --email seu@email.com
+            </code>
+            .
+          </p>
+
           <label className="flex cursor-pointer items-start gap-2.5 text-[12px] leading-5 text-paper/90">
             <input
               type="checkbox"

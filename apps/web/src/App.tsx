@@ -68,6 +68,22 @@ export function App() {
     setView('login')
   }
 
+  async function handleGoSetup() {
+    setBootError('')
+    try {
+      const status = await api.setupStatus()
+      if (status.needs_setup) {
+        setView('setup')
+        return
+      }
+      setBootError('Esta instalação já tem um dono. Entre com a conta existente.')
+      setView('login')
+    } catch (error) {
+      setBootError(error instanceof Error ? error.message : 'Não foi possível falar com a API.')
+      setView('login')
+    }
+  }
+
   if (view === 'loading') {
     return (
       <div className="flex min-h-dvh items-center justify-center bg-ink">
@@ -94,5 +110,5 @@ export function App() {
     )
   }
 
-  return <LoginPage onSuccess={handleAuth} initialError={bootError} />
+  return <LoginPage onSuccess={handleAuth} onSetup={handleGoSetup} initialError={bootError} />
 }
