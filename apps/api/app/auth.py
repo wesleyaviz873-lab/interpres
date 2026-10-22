@@ -63,6 +63,9 @@ def create_session(db: Session, user: User, request: Request) -> tuple[AuthSessi
         token_hash=hash_token(token),
         csrf_token=new_csrf_token(),
         expires_at=utcnow() + timedelta(hours=settings.session_ttl_hours),
+        user_agent=(request.headers.get("user-agent") or "")[:500] or None,
+        ip=client_ip(request),
+        last_seen_at=utcnow(),
     )
     db.add(auth_session)
     db.commit()
@@ -102,6 +105,37 @@ def require_user(request: Request, db: Session = Depends(get_db)) -> User:
         )
     request.state.auth_session = auth_session
     return user
+
+
+def device_label(user_agent: str | None) -> str:
+    ua = (user_agent or "").lower()
+    browser = "Navegador"
+    if "edg/" in ua:
+        browser = "Edge"
+    elif "chrome/" in ua or "crios/" in ua:
+        browser = "Chrome"
+    elif "firefox/" in ua or "fxios/" in ua:
+        browser = "Firefox"
+    elif "safari/" in ua:
+        browser = "Safari"
+
+    system = "dispositivo"
+    if "iphone" in ua:
+        system = "iPhone"
+    elif "ipad" in ua:
+        system = "iPad"
+    elif "android" in ua:
+        system = "Android"
+    elif "windows" in ua:
+        system = "Windows"
+    elif "mac os" in ua or "macintosh" in ua:
+        system = "macOS"
+    elif "linux" in ua:
+        system = "Linux"
+
+    if browser == "Navegador" and system == "dispositivo":
+        return "Dispositivo desconhecido"
+    return f"{browser} em {system}"
 
 
 def require_csrf(request: Request, user: User = Depends(require_user)) -> User:

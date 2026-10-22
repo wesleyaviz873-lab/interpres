@@ -17,6 +17,7 @@ from ..auth import (
     audit,
     clear_session_cookie,
     create_session,
+    device_label,
     require_csrf,
     require_user,
     set_session_cookie,
@@ -655,6 +656,63 @@ def logout_all(
     db.commit()
     audit(db, "auth.logout_all", user.id, request)
     clear_session_cookie(response)
+    return {"ok": True}
+
+
+@router.get("/auth/devices")
+def list_devices(
+    request: Request,
+    user: User = Depends(require_user),
+    db: Session = Depends(get_db),
+) -> dict[str, object]:
+    current_id = request.state.auth_session.id
+    sessions = db.scalars(
+        select(AuthSession)
+        .where(AuthSession.user_id == user.id)
+        .order_by(AuthSession.last_seen_at.desc(), AuthSession.created_at.desc())
+    ).all()
+    return {
+        "devices": [
+            {
+                "id": session.id,
+                "label": device_label(session.user_agent),
+                "ip": session.ip,
+                "created_at": session.created_at.isoformat(),
+                "last_seen_at": (
+                    session.last_seen_at.isoformat()
+                    if session.last_seen_at
+                    else session.created_at.isoformat()
+                ),
+                "current": session.id == current_id,
+            }
+            for session in sessions
+        ]
+    }
+
+
+@router.delete("/auth/devices/{device_id}")
+def revoke_device(
+    device_id: str,
+    request: Request,
+    response: Response,
+    user: User = Depends(require_csrf),
+    db: Session = Depends(get_db),
+) -> dict[str, bool]:
+    session = db.scalar(
+        select(AuthSession).where(
+            AuthSession.id == device_id,
+            AuthSession.user_id == user.id,
+        )
+    )
+    if not session:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dispositivo não encontrado.")
+
+    current_id = request.state.auth_session.id
+    db.delete(session)
+    db.commit()
+    if device_id == current_id:
+        clear_session_cookie(response)
+    audit(db, "auth.device_revoked", user.id, request, device_id)
     return {"ok": True}
 
 

@@ -8,15 +8,22 @@ COPY apps/web/ ./
 RUN npm run build
 
 FROM python:3.12-slim AS runtime
+ARG TARGETARCH=amd64
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends gosu \
+    && apt-get install -y --no-install-recommends gosu curl ca-certificates tar \
     && rm -rf /var/lib/apt/lists/* \
     && addgroup --system interpres \
-    && adduser --system --ingroup interpres interpres
+    && adduser --system --ingroup interpres interpres \
+    && curl -fsSL "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-${TARGETARCH}" \
+        -o /usr/local/bin/cloudflared \
+    && chmod +x /usr/local/bin/cloudflared \
+    && curl -fsSL "https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-linux-${TARGETARCH}.tgz" \
+        | tar xz -C /usr/local/bin \
+    && chmod +x /usr/local/bin/ngrok
 
 WORKDIR /app
 COPY apps/api/requirements.txt ./

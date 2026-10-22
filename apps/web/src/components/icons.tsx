@@ -229,6 +229,15 @@ export function Globe({ className }: IconProps) {
   )
 }
 
+export function Link({ className }: IconProps) {
+  return (
+    <IconShell className={className}>
+      <path d="M10 13.5a4 4 0 0 0 5.7 0l2.8-2.8a4 4 0 0 0-5.7-5.7l-1.4 1.4" />
+      <path d="M14 10.5a4 4 0 0 0-5.7 0l-2.8 2.8a4 4 0 0 0 5.7 5.7l1.4-1.4" />
+    </IconShell>
+  )
+}
+
 export function Bell({ className }: IconProps) {
   return (
     <IconShell className={className}>

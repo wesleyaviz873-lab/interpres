@@ -128,12 +128,23 @@ export function AppShell({ user, onUserChange, onLogout, onSessionEnded }: AppSh
   const closeSettings = useCallback(() => setSettingsOpen(false), [])
 
   const refreshProviders = useCallback(async () => {
-    try {
-      const data = await api.providers()
-      setHasProvider(data.providers.some((provider) => provider.configured))
-    } catch {
-      setHasProvider(false)
-    }
+    const [providersResult, ollamaResult] = await Promise.allSettled([
+      api.providers(),
+      api.ollamaModels(),
+    ])
+
+    const cloudConfigured =
+      providersResult.status === 'fulfilled'
+        ? providersResult.value.providers.some(
+            (provider) => provider.id !== 'ollama' && provider.configured,
+          )
+        : false
+    const ollamaReady =
+      ollamaResult.status === 'fulfilled' &&
+      ollamaResult.value.reachable &&
+      ollamaResult.value.models.length > 0
+
+    setHasProvider(cloudConfigured || ollamaReady)
   }, [])
 
   useEffect(() => {
@@ -169,7 +180,7 @@ export function AppShell({ user, onUserChange, onLogout, onSessionEnded }: AppSh
     setDraft('')
     if (!hasProvider) {
       openSettings('chaves')
-      showToast('Configure uma chave de API para usar o chat.', 'error')
+      showToast('Conecte um provedor ou use o Ollama local.', 'error')
       return
     }
     showToast('O motor de chat será ativado no próximo bloco.')
@@ -263,7 +274,7 @@ export function AppShell({ user, onUserChange, onLogout, onSessionEnded }: AppSh
                   <p className="mt-1 text-[12.5px] leading-5 text-paper/90">
                     {hasProvider
                       ? 'Tudo pronto. O motor de chat e os jobs entram no próximo bloco.'
-                      : 'Olá! Configure uma chave de API em Configurações para começar.'}
+                      : 'Olá! Conecte um provedor ou use o Ollama local para começar.'}
                   </p>
                 </div>
               </div>
@@ -278,7 +289,7 @@ export function AppShell({ user, onUserChange, onLogout, onSessionEnded }: AppSh
                       Nenhum provedor configurado
                     </p>
                     <p className="text-[11px] leading-4 text-muted">
-                      Conecte OpenAI, Anthropic, Google, OpenRouter, OpenCode ou Ollama.
+                      Conecte um provedor ou use o Ollama local.
                     </p>
                   </div>
                   <Button
@@ -288,7 +299,7 @@ export function AppShell({ user, onUserChange, onLogout, onSessionEnded }: AppSh
                     variant="secondary"
                     onClick={() => openSettings('chaves')}
                   >
-                    Configurar chave de API
+                    Configurar provedor
                   </Button>
                 </div>
               ) : null}
@@ -325,7 +336,7 @@ export function AppShell({ user, onUserChange, onLogout, onSessionEnded }: AppSh
               <p className="mt-1.5 px-1 text-[10.5px] leading-4 text-muted">
                 {hasProvider
                   ? 'O motor de chat será ativado no próximo bloco.'
-                  : 'Configure uma chave de API para habilitar o chat.'}
+                  : 'Conecte um provedor ou use o Ollama local para habilitar o chat.'}
               </p>
             </form>
           </div>

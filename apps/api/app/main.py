@@ -1,4 +1,4 @@
-"""Interpres API entry point."""
+﻿"""Interpres API entry point."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .config import settings
 from .database import Base, engine
-from .routes import agents, auth, health, providers
+from .routes import agents, auth, health, providers, tunnel
 
 
 @asynccontextmanager
@@ -58,8 +58,10 @@ app.include_router(health.router)
 app.include_router(auth.router)
 app.include_router(providers.router)
 app.include_router(agents.router)
+app.include_router(tunnel.router)
 
 
 _web_dist = Path(settings.web_dist_dir)
 if _web_dist.exists():
     app.mount("/", StaticFiles(directory=str(_web_dist), html=True), name="web")
+

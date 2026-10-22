@@ -24,9 +24,14 @@ owner account, like a self-hosted n8n. There is no public signup.
 - Account settings: change e-mail, change password, rotate the recovery code and
   log out of every device.
 - Encrypted provider key storage for OpenAI, Anthropic, Google, OpenRouter,
-  OpenCode and Ollama, with local Ollama model discovery.
-- Settings sections for API keys, voice preferences, detected coding agents,
-  project memory (future), backend health, appearance, notifications and about.
+  OpenCode and Ollama. Ollama is detected automatically and lists local models;
+  no API-key field is shown for it.
+- Connected-device list with per-device revoke; sessions slide while the account
+  is used (30 days by default).
+- Optional tunnel manager: Cloudflare quick link (no account), Cloudflare token
+  and ngrok. Start/stop and copy/open the public URL from Settings.
+- Settings sections for account, security, API keys, voice, harnesses, project
+  memory (future), backend health, tunnel, appearance, notifications and about.
 - A real app shell with sidebar, chat area and composer. The chat engine and
   persistent jobs are the next block.
 - CSRF protection on state-changing requests.
@@ -63,6 +68,11 @@ For the simpler "forgot password" by e-mail, fill the `SMTP_*` variables in
 account e-mail. Without SMTP, the recovery code and the admin CLI remain
 available. TOTP two-factor is optional and can be enabled later in
 **Configurações → Segurança**.
+
+To expose the installation without opening ports, use **Configurações → Túnel**.
+The Docker image includes `cloudflared` and `ngrok`. The Cloudflare quick link
+needs no account; a token is optional for a named tunnel. The link can be opened
+on the phone and the app is responsive.
 
 To stop:
 

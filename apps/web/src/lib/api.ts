@@ -57,6 +57,31 @@ export type SessionInfo = {
   session_ttl: number
 }
 
+export type DeviceInfo = {
+  id: string
+  label: string
+  ip: string
+  created_at: string
+  last_seen_at: string
+  current: boolean
+}
+
+export type DevicesResponse = {
+  devices: DeviceInfo[]
+}
+
+export type TunnelProvider = 'cloudflare_quick' | 'cloudflare_token' | 'ngrok'
+
+export type TunnelStatus = {
+  running: boolean
+  provider: string | null
+  url: string | null
+  started_at: string | null
+  error: string | null
+  log: string[]
+  providers: Record<string, string>
+}
+
 export type RecoveryCodeResponse = {
   recovery_code: string
 }
@@ -274,6 +299,31 @@ export const api = {
 
   session(): Promise<SessionInfo> {
     return request<SessionInfo>('/api/auth/session')
+  },
+
+  devices(): Promise<DevicesResponse> {
+    return request<DevicesResponse>('/api/auth/devices')
+  },
+
+  revokeDevice(id: string): Promise<OkResponse> {
+    return request<OkResponse>(`/api/auth/devices/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+    })
+  },
+
+  tunnelStatus(): Promise<TunnelStatus> {
+    return request<TunnelStatus>('/api/tunnel/status')
+  },
+
+  tunnelStart(provider: TunnelProvider, token?: string): Promise<TunnelStatus> {
+    return request<TunnelStatus>('/api/tunnel/start', {
+      method: 'POST',
+      body: JSON.stringify(token ? { provider, token } : { provider }),
+    })
+  },
+
+  tunnelStop(): Promise<OkResponse> {
+    return request<OkResponse>('/api/tunnel/stop', { method: 'POST' })
   },
 
   providers(): Promise<ProvidersResponse> {

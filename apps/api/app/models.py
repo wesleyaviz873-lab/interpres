@@ -50,6 +50,9 @@ class AuthSession(Base):
     token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True, nullable=False)
     csrf_token: Mapped[str] = mapped_column(String(64), nullable=False)
     expires_at: Mapped[datetime] = mapped_column(DateTime, index=True, nullable=False)
+    user_agent: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    ip: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    last_seen_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
 
     user: Mapped[User] = relationship(back_populates="sessions")

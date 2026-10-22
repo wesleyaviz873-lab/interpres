@@ -10,11 +10,13 @@ import {
 import {
   api,
   type AgentInfo,
+  type DeviceInfo,
   type HealthResponse,
   type OllamaModelsResponse,
   type ProviderInfo,
   type RecoveryMethods,
-  type SessionInfo,
+  type TunnelProvider,
+  type TunnelStatus,
   type TwoFactorSetupResponse,
   type TwoFactorStatus,
   type User,
@@ -48,6 +50,7 @@ import {
   Globe,
   Info,
   Key,
+  Link as LinkIcon,
   Logout,
   Mail,
   Mic,
@@ -57,7 +60,6 @@ import {
   Sliders,
   Terminal,
   User as UserIcon,
-  Warning,
   X,
 } from './icons'
 
@@ -69,6 +71,7 @@ export type SettingsSection =
   | 'harnesses'
   | 'memoria'
   | 'backend'
+  | 'tunel'
   | 'aparencia'
   | 'notificacoes'
   | 'sobre'
@@ -94,7 +97,7 @@ const SECTIONS: SectionDefinition[] = [
   {
     id: 'seguranca',
     label: 'Segurança',
-    description: 'Recuperação de acesso, 2FA e sessões.',
+    description: 'Dispositivos, 2FA e recuperação.',
     Icon: Shield,
   },
   {
@@ -116,6 +119,12 @@ const SECTIONS: SectionDefinition[] = [
     label: 'Backend / Endpoint',
     description: 'Conexão com a API desta instalação.',
     Icon: Globe,
+  },
+  {
+    id: 'tunel',
+    label: 'Túnel',
+    description: 'Acesso público temporário.',
+    Icon: LinkIcon,
   },
   { id: 'aparencia', label: 'Aparência', description: 'Fonte, cor e animações.', Icon: Sliders },
   {
@@ -249,6 +258,7 @@ export function SettingsModal({
             {section === 'harnesses' ? <HarnessesSection /> : null}
             {section === 'memoria' ? <ProjectMemorySection /> : null}
             {section === 'backend' ? <BackendSection /> : null}
+            {section === 'tunel' ? <TunnelSection /> : null}
             {section === 'aparencia' ? <AppearanceSection /> : null}
             {section === 'notificacoes' ? <NotificationsSection /> : null}
             {section === 'sobre' ? <AboutSection /> : null}
@@ -308,6 +318,18 @@ function Disclosure({ title, summary, open, onToggle, children }: DisclosureProp
       </button>
       {open ? <div className="space-y-2.5 border-t border-line px-3.5 py-3">{children}</div> : null}
     </div>
+  )
+}
+
+function Details({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <details className="group rounded-lg border border-line bg-ink/50">
+      <summary className="flex cursor-pointer list-none items-center gap-1.5 px-3 py-2 text-[11px] font-medium text-muted transition-colors hover:text-paper [&::-webkit-details-marker]:hidden">
+        <ChevronDown className="h-3.5 w-3.5 transition-transform group-open:rotate-180" />
+        {label}
+      </summary>
+      <div className="space-y-2 border-t border-line px-3 py-2.5">{children}</div>
+    </details>
   )
 }
 
@@ -566,16 +588,175 @@ function SecuritySection({ user, onSessionEnded }: SecuritySectionProps) {
 
   return (
     <div className="space-y-2.5">
+      <AccountActiveCard user={user} onSessionEnded={onSessionEnded} />
+      <DevicesCard onSessionEnded={onSessionEnded} />
+      <TwoFactorCard />
+      <EmailRecoveryCard />
       <RecoveryCodeCard
         hasRecoveryCode={hasRecoveryCode}
         statusError={statusError}
         onGenerated={() => setHasRecoveryCode(true)}
       />
-      <EmailRecoveryCard />
-      <TwoFactorCard />
-      <SessionCard user={user} />
-      <LogoutAllCard onSessionEnded={onSessionEnded} />
     </div>
+  )
+}
+
+function AccountActiveCard({
+  user,
+  onSessionEnded,
+}: {
+  user: User
+  onSessionEnded: () => void
+}) {
+  const [confirming, setConfirming] = useState(false)
+  const [ending, setEnding] = useState(false)
+  const [error, setError] = useState('')
+
+  async function handleLogoutAll() {
+    setError('')
+    setEnding(true)
+    try {
+      await api.logoutAll()
+      onSessionEnded()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Não foi possível encerrar as sessões.')
+    } finally {
+      setEnding(false)
+    }
+  }
+
+  return (
+    <Card title="Conta ativa" action={<Chip tone="ok">Ativa</Chip>}>
+      <div className="flex items-center gap-2.5 rounded-lg border border-line bg-ink px-3 py-2">
+        <Mail className="h-3.5 w-3.5 shrink-0 text-muted" />
+        <p className="min-w-0 flex-1 truncate text-[11.5px] font-medium text-paper">
+          {user.email}
+        </p>
+        {confirming ? (
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={handleLogoutAll}
+              disabled={ending}
+              className="rounded-md border border-red-500/30 bg-red-500/10 px-2 py-1 text-[10.5px] font-medium text-red-200 transition-colors hover:bg-red-500/20 disabled:opacity-60"
+            >
+              {ending ? 'Saindo...' : 'Confirmar'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setConfirming(false)}
+              disabled={ending}
+              className="rounded-md border border-line px-2 py-1 text-[10.5px] font-medium text-muted transition-colors hover:text-paper disabled:opacity-60"
+            >
+              Cancelar
+            </button>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setConfirming(true)}
+            className="inline-flex shrink-0 items-center gap-1 rounded-md border border-line px-2 py-1 text-[10.5px] font-medium text-muted transition-colors hover:border-white/25 hover:text-paper"
+          >
+            <Logout className="h-3 w-3" />
+            Sair de todos os dispositivos
+          </button>
+        )}
+      </div>
+      {error ? <ErrorBanner message={error} /> : null}
+    </Card>
+  )
+}
+
+function DevicesCard({ onSessionEnded }: { onSessionEnded: () => void }) {
+  const [devices, setDevices] = useState<DeviceInfo[] | null>(null)
+  const [error, setError] = useState('')
+  const [revoking, setRevoking] = useState<string | null>(null)
+
+  const refresh = useCallback(async () => {
+    try {
+      const data = await api.devices()
+      setDevices(data.devices)
+      setError('')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Não foi possível ler os dispositivos.')
+    }
+  }, [])
+
+  useEffect(() => {
+    void refresh()
+  }, [refresh])
+
+  async function handleRevoke(device: DeviceInfo) {
+    setError('')
+    setRevoking(device.id)
+    try {
+      await api.revokeDevice(device.id)
+      if (device.current) {
+        onSessionEnded()
+        return
+      }
+      await refresh()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Não foi possível revogar o dispositivo.')
+    } finally {
+      setRevoking(null)
+    }
+  }
+
+  return (
+    <Card
+      title="Dispositivos conectados"
+      action={
+        <button
+          type="button"
+          onClick={() => {
+            void refresh()
+          }}
+          aria-label="Atualizar dispositivos"
+          title="Atualizar"
+          className="rounded-md p-1 text-muted transition-colors hover:bg-white/5 hover:text-paper"
+        >
+          <Refresh className="h-3.5 w-3.5" />
+        </button>
+      }
+    >
+      {error ? <ErrorBanner message={error} /> : null}
+      {!devices && !error ? <p className="text-[11px] text-muted">Lendo dispositivos...</p> : null}
+      {devices && devices.length === 0 ? (
+        <p className="text-[11px] text-muted">Nenhum dispositivo conectado.</p>
+      ) : null}
+
+      {devices && devices.length > 0 ? (
+        <ul className="divide-y divide-line overflow-hidden rounded-lg border border-line bg-ink/40">
+          {devices.map((device) => (
+            <li key={device.id} className="flex items-center gap-2.5 px-3 py-2">
+              <div className="min-w-0 flex-1">
+                <div className="flex min-w-0 items-center gap-1.5">
+                  <p className="truncate text-[11.5px] font-medium text-paper">
+                    {device.label || 'Dispositivo'}
+                  </p>
+                  {device.current ? <Chip tone="ok">Este dispositivo</Chip> : null}
+                </div>
+                <p className="truncate text-[10.5px] text-muted">
+                  {formatLastSeen(device.last_seen_at)}
+                  {device.ip ? ` · ${device.ip}` : ''}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  void handleRevoke(device)
+                }}
+                disabled={revoking === device.id}
+                className="shrink-0 rounded-md border border-line px-2 py-1 text-[10.5px] font-medium text-muted transition-colors hover:border-red-500/30 hover:text-red-200 disabled:opacity-60"
+              >
+                {revoking === device.id ? 'Revogando...' : device.current ? 'Sair' : 'Revogar'}
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </Card>
   )
 }
 
@@ -586,7 +767,6 @@ type RecoveryCodeCardProps = {
 }
 
 function RecoveryCodeCard({ hasRecoveryCode, statusError, onGenerated }: RecoveryCodeCardProps) {
-  const [open, setOpen] = useState(false)
   const [password, setPassword] = useState('')
   const [code, setCode] = useState<string | null>(null)
   const [error, setError] = useState('')
@@ -608,8 +788,7 @@ function RecoveryCodeCard({ hasRecoveryCode, statusError, onGenerated }: Recover
       const response = await api.recoveryCode(password)
       setCode(response.recovery_code)
       setPassword('')
-      setOpen(false)
-      setNotice('Código gerado. Ele aparece uma única vez — copie ou baixe agora.')
+      setNotice('Código gerado. Ele aparece uma única vez.')
       onGenerated()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Não foi possível gerar o código.')
@@ -621,7 +800,6 @@ function RecoveryCodeCard({ hasRecoveryCode, statusError, onGenerated }: Recover
   return (
     <Card
       title="Código de recuperação"
-      description="Alternativa ao e-mail para recuperar o acesso."
       action={
         hasRecoveryCode === null ? undefined : (
           <Chip tone={hasRecoveryCode ? 'ok' : 'off'}>
@@ -639,8 +817,8 @@ function RecoveryCodeCard({ hasRecoveryCode, statusError, onGenerated }: Recover
         </p>
       ) : null}
 
-      {open ? (
-        <form className="space-y-2.5" onSubmit={handleSubmit}>
+      <Details label={hasRecoveryCode ? 'Gerar novo código' : 'Gerar código'}>
+        <form className="space-y-2" onSubmit={handleSubmit}>
           <Field
             label="Senha atual"
             type="password"
@@ -650,42 +828,11 @@ function RecoveryCodeCard({ hasRecoveryCode, statusError, onGenerated }: Recover
             placeholder="confirme com sua senha"
           />
           {error ? <ErrorBanner message={error} /> : null}
-          <div className="flex flex-wrap gap-2">
-            <Button type="submit" size="sm" fullWidth={false} loading={loading}>
-              Gerar código
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              fullWidth={false}
-              variant="secondary"
-              disabled={loading}
-              onClick={() => {
-                setOpen(false)
-                setPassword('')
-                setError('')
-              }}
-            >
-              Cancelar
-            </Button>
-          </div>
+          <Button type="submit" size="sm" fullWidth={false} loading={loading}>
+            Gerar código
+          </Button>
         </form>
-      ) : (
-        <Button
-          type="button"
-          size="sm"
-          fullWidth={false}
-          variant="secondary"
-          onClick={() => {
-            setOpen(true)
-            setError('')
-            setNotice('')
-          }}
-        >
-          <Refresh className="h-3.5 w-3.5" />
-          {hasRecoveryCode ? 'Gerar novo código' : 'Gerar código de recuperação'}
-        </Button>
-      )}
+      </Details>
     </Card>
   )
 }
@@ -718,7 +865,6 @@ function EmailRecoveryCard() {
   return (
     <Card
       title="Recuperação por e-mail"
-      description="Redefinição de senha com um código enviado para a caixa de entrada."
       action={
         methods === null ? undefined : (
           <Chip tone={methods.email ? 'ok' : 'off'}>
@@ -730,24 +876,20 @@ function EmailRecoveryCard() {
       {error ? <ErrorBanner message={error} /> : null}
       {!methods && !error ? <p className="text-[11px] text-muted">Lendo métodos...</p> : null}
       {methods?.email ? (
-        <p className="text-[11px] leading-4 text-muted">
-          O código de redefinição é enviado para o e-mail da conta.
-        </p>
+        <p className="text-[11px] leading-4 text-muted">Código enviado para o e-mail da conta.</p>
       ) : null}
       {methods && !methods.email ? (
-        <>
-          <p className="rounded-lg border border-line bg-ink/60 px-3 py-2 text-[11px] leading-4 text-muted">
-            Desativada — configure SMTP no <span className="font-mono text-paper/80">.env</span> e
-            reinicie o servidor.
-          </p>
+        <Details label="Como ativar">
           <p className="text-[11px] leading-4 text-muted">
-            Enquanto isso, o dono do servidor pode redefinir a senha pela CLI:
+            Configure o SMTP no <span className="font-mono text-paper/80">.env</span> e reinicie o
+            servidor.
           </p>
+          <p className="text-[11px] leading-4 text-muted">Sem SMTP, redefina pela CLI:</p>
           <code className="block break-all rounded-lg border border-line bg-ink px-2.5 py-1.5 font-mono text-[10px] text-paper/80">
             docker compose exec --user interpres interpres python -m app.cli reset-password --email
             seu@email.com
           </code>
-        </>
+        </Details>
       ) : null}
     </Card>
   )
@@ -880,7 +1022,6 @@ function TwoFactorCard() {
   return (
     <Card
       title="Autenticação em dois fatores"
-      description="Código de 6 dígitos de um aplicativo como Google Authenticator ou 1Password."
       action={
         status === null ? undefined : (
           <Chip tone={status.enabled ? 'ok' : 'off'}>
@@ -899,17 +1040,19 @@ function TwoFactorCard() {
       {status && !status.enabled ? (
         setup ? (
           <form className="space-y-2.5" onSubmit={handleEnable}>
-            <div className="flex flex-col gap-2.5 sm:flex-row">
-              <img
-                src={setup.qr_data_url}
-                alt="QR code para configurar o aplicativo autenticador"
-                className="h-32 w-32 shrink-0 self-center rounded-lg border border-line bg-white p-1.5 sm:self-start"
-              />
-              <div className="min-w-0 flex-1 space-y-2">
-                <p className="text-[11px] leading-4 text-muted">
-                  Escaneie o QR code ou informe a chave manualmente no aplicativo.
-                </p>
-                <SecretCopy secret={setup.secret} />
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-start">
+              <div className="flex shrink-0 flex-col items-center gap-1 self-center sm:self-start">
+                <img
+                  src={setup.qr_data_url}
+                  alt="QR code para configurar o aplicativo autenticador"
+                  className="h-32 w-32 rounded-lg border border-line bg-white p-1.5"
+                />
+                <span className="text-[10px] text-muted">Escaneie no app</span>
+              </div>
+              <div className="min-w-0 flex-1">
+                <Details label="Não consegui escanear">
+                  <SecretCopy secret={setup.secret} />
+                </Details>
               </div>
             </div>
             <Field
@@ -922,7 +1065,7 @@ function TwoFactorCard() {
             {enableError ? <ErrorBanner message={enableError} /> : null}
             <div className="flex flex-wrap gap-2">
               <Button type="submit" size="sm" fullWidth={false} loading={enableLoading}>
-                Confirmar e ativar
+                Confirmar
               </Button>
               <Button
                 type="button"
@@ -938,9 +1081,6 @@ function TwoFactorCard() {
           </form>
         ) : (
           <div className="space-y-2">
-            <p className="text-[11px] leading-4 text-muted">
-              Desativada. Ative para exigir um código além da senha a cada login.
-            </p>
             {setupError ? <ErrorBanner message={setupError} /> : null}
             <Button
               type="button"
@@ -956,13 +1096,25 @@ function TwoFactorCard() {
       ) : null}
 
       {status && status.enabled ? (
-        <div className="space-y-2.5">
-          <p className="text-[11px] text-muted">
-            Códigos de backup restantes: {status.backup_codes_remaining}
-          </p>
+        <div className="space-y-2">
+          <div className="flex items-center justify-between gap-2 rounded-lg border border-line bg-ink px-3 py-2">
+            <span className="text-[11px] text-muted">Códigos de backup restantes</span>
+            <span className="font-mono text-[11.5px] font-medium text-paper">
+              {status.backup_codes_remaining}
+            </span>
+          </div>
 
-          {disabling ? (
-            <form className="space-y-2.5" onSubmit={handleDisable}>
+          <Disclosure
+            title="Desativar 2FA"
+            open={disabling}
+            onToggle={() => {
+              setDisabling((current) => !current)
+              setDisableError('')
+              setCurrentPassword('')
+              setDisableCode('')
+            }}
+          >
+            <form className="space-y-2" onSubmit={handleDisable}>
               <Field
                 label="Senha atual"
                 type="password"
@@ -979,163 +1131,13 @@ function TwoFactorCard() {
                 placeholder="123456 ou código de backup"
               />
               {disableError ? <ErrorBanner message={disableError} /> : null}
-              <div className="flex flex-wrap gap-2">
-                <Button
-                  type="submit"
-                  size="sm"
-                  fullWidth={false}
-                  variant="secondary"
-                  loading={disableLoading}
-                >
-                  Desativar 2FA
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  fullWidth={false}
-                  variant="secondary"
-                  onClick={() => {
-                    setDisabling(false)
-                    setCurrentPassword('')
-                    setDisableCode('')
-                    setDisableError('')
-                  }}
-                  disabled={disableLoading}
-                >
-                  Cancelar
-                </Button>
-              </div>
+              <Button type="submit" size="sm" fullWidth={false} loading={disableLoading}>
+                Desativar 2FA
+              </Button>
             </form>
-          ) : (
-            <Button
-              type="button"
-              size="sm"
-              fullWidth={false}
-              variant="secondary"
-              onClick={() => setDisabling(true)}
-            >
-              Desativar 2FA
-            </Button>
-          )}
+          </Disclosure>
         </div>
       ) : null}
-    </Card>
-  )
-}
-
-function SessionCard({ user }: { user: User }) {
-  const [session, setSession] = useState<SessionInfo | null>(null)
-  const [sessionError, setSessionError] = useState('')
-
-  useEffect(() => {
-    let alive = true
-    api
-      .session()
-      .then((data) => {
-        if (alive) setSession(data)
-      })
-      .catch((err: unknown) => {
-        if (alive) {
-          setSessionError(err instanceof Error ? err.message : 'Não foi possível ler a sessão.')
-        }
-      })
-    return () => {
-      alive = false
-    }
-  }, [])
-
-  return (
-    <Card
-      title="Sessão atual"
-      description="Validade e limites desta sessão neste navegador."
-      action={<Chip tone="off">HttpOnly</Chip>}
-    >
-      {sessionError ? <ErrorBanner message={sessionError} /> : null}
-      {!session && !sessionError ? <p className="text-[11px] text-muted">Lendo sessão...</p> : null}
-      {session ? (
-        <div className="grid gap-2 sm:grid-cols-2">
-          <Stat label="Expira em" value={formatDuration(session.expires_in_seconds)} />
-          <Stat label="Duração total" value={formatDuration(session.session_ttl)} />
-          <Stat label="Expira em (data)" value={formatDateTime(session.expires_at)} />
-          <Stat label="Conta" value={session.user.email || user.email} />
-        </div>
-      ) : null}
-      <p className="rounded-lg border border-line bg-ink/60 px-3 py-2 text-[11px] leading-4 text-muted">
-        A sessão usa cookie <span className="font-mono text-paper/80">HttpOnly</span>. Ações que
-        alteram dados exigem o cabeçalho{' '}
-        <span className="font-mono text-paper/80">X-CSRF-Token</span>.
-      </p>
-    </Card>
-  )
-}
-
-function LogoutAllCard({ onSessionEnded }: { onSessionEnded: () => void }) {
-  const [confirming, setConfirming] = useState(false)
-  const [ending, setEnding] = useState(false)
-  const [endError, setEndError] = useState('')
-
-  async function handleLogoutAll() {
-    setEndError('')
-    setEnding(true)
-    try {
-      await api.logoutAll()
-      onSessionEnded()
-    } catch (err) {
-      setEndError(err instanceof Error ? err.message : 'Não foi possível encerrar as sessões.')
-    } finally {
-      setEnding(false)
-    }
-  }
-
-  return (
-    <Card
-      title="Encerrar sessões"
-      description="Sai deste dispositivo e de qualquer outro onde a conta esteja aberta."
-    >
-      {confirming ? (
-        <div className="rounded-lg border border-red-500/25 bg-red-500/10 p-3">
-          <p className="flex items-center gap-1.5 text-[12px] font-medium text-red-200">
-            <Warning className="h-3.5 w-3.5" />
-            Encerrar todas as sessões?
-          </p>
-          <p className="mt-0.5 text-[11px] leading-4 text-red-200/80">
-            Você precisará entrar novamente em todos os dispositivos.
-          </p>
-          <div className="mt-2.5 flex flex-wrap gap-2">
-            <Button
-              type="button"
-              size="sm"
-              fullWidth={false}
-              variant="secondary"
-              onClick={() => setConfirming(false)}
-              disabled={ending}
-            >
-              Cancelar
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              fullWidth={false}
-              loading={ending}
-              onClick={handleLogoutAll}
-            >
-              Sair de todos
-            </Button>
-          </div>
-        </div>
-      ) : (
-        <Button
-          type="button"
-          size="sm"
-          fullWidth={false}
-          variant="secondary"
-          onClick={() => setConfirming(true)}
-        >
-          <Logout className="h-3.5 w-3.5" />
-          Sair de todos os dispositivos
-        </Button>
-      )}
-      {endError ? <ErrorBanner message={endError} /> : null}
     </Card>
   )
 }
@@ -1173,8 +1175,10 @@ function ProvidersSection({ onProvidersChanged }: ProvidersSectionProps) {
 
   return (
     <div className="space-y-2.5">
+      <OllamaSection onProvidersChanged={onProvidersChanged} />
+
       <p className="text-[11px] leading-4 text-muted">
-        As chaves ficam no backend desta instalação. Chaves salvas nunca são exibidas aqui.
+        Chaves ficam no backend e nunca são exibidas depois de salvas.
       </p>
 
       {error ? (
@@ -1197,14 +1201,194 @@ function ProvidersSection({ onProvidersChanged }: ProvidersSectionProps) {
 
       {!providers && !error ? <p className="text-[11px] text-muted">Lendo provedores...</p> : null}
 
-      {providers?.map((provider) => (
-        <ProviderRow
-          key={provider.id}
-          provider={provider}
-          onChanged={(configured) => handleProviderChange(provider.id, configured)}
-        />
-      ))}
+      {providers
+        ?.filter((provider) => provider.id !== 'ollama')
+        .map((provider) => (
+          <ProviderRow
+            key={provider.id}
+            provider={provider}
+            onChanged={(configured) => handleProviderChange(provider.id, configured)}
+          />
+        ))}
     </div>
+  )
+}
+
+function OllamaSection({ onProvidersChanged }: ProvidersSectionProps) {
+  const [ollama, setOllama] = useState<OllamaModelsResponse | null>(null)
+  const [error, setError] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [url, setUrl] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState('')
+  const [notice, setNotice] = useState('')
+
+  const refresh = useCallback(async (): Promise<boolean> => {
+    setLoading(true)
+    setError('')
+    try {
+      setOllama(await api.ollamaModels())
+      return true
+    } catch (err) {
+      setOllama(null)
+      setError(err instanceof Error ? err.message : 'Não foi possível detectar o Ollama.')
+      return false
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    void refresh()
+  }, [refresh])
+
+  async function handleRefresh() {
+    const ok = await refresh()
+    if (ok) onProvidersChanged?.()
+  }
+
+  async function handleSave(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setSaveError('')
+    setNotice('')
+
+    if (!url.trim()) {
+      setSaveError('Informe a URL do Ollama.')
+      return
+    }
+
+    setSaving(true)
+    try {
+      await api.saveProvider('ollama', url.trim())
+      setUrl('')
+      setNotice('Endereço salvo.')
+      await refresh()
+      onProvidersChanged?.()
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : 'Não foi possível salvar o endereço.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const detected = Boolean(ollama?.reachable && ollama.models.length > 0)
+
+  return (
+    <Card
+      title="Ollama"
+      action={
+        <div className="flex items-center gap-1.5">
+          {ollama ? (
+            <Chip tone={detected ? 'ok' : ollama.reachable ? 'warn' : 'off'}>
+              {detected ? 'Detectado' : ollama.reachable ? 'Sem modelos' : 'Não detectado'}
+            </Chip>
+          ) : null}
+          <button
+            type="button"
+            onClick={() => {
+              void handleRefresh()
+            }}
+            disabled={loading}
+            aria-label="Atualizar Ollama"
+            title="Atualizar"
+            className="inline-flex items-center gap-1 rounded-md border border-line px-2 py-1 text-[10.5px] font-medium text-muted transition-colors hover:border-white/25 hover:text-paper disabled:opacity-60"
+          >
+            <Refresh className="h-3 w-3" />
+            Atualizar
+          </button>
+        </div>
+      }
+    >
+      {error ? <ErrorBanner message={error} /> : null}
+      {!ollama && !error && loading ? <p className="text-[11px] text-muted">Detectando...</p> : null}
+      {!ollama && error ? (
+        <Button
+          type="button"
+          size="sm"
+          fullWidth={false}
+          variant="secondary"
+          loading={loading}
+          onClick={() => {
+            void handleRefresh()
+          }}
+        >
+          <Refresh className="h-3.5 w-3.5" />
+          Tentar novamente
+        </Button>
+      ) : null}
+
+      {detected && ollama ? (
+        <>
+          <p className="text-[11px] leading-4 text-muted">
+            {ollama.models.length} modelo(s) instalado(s) em {ollama.base_url}
+          </p>
+          <div className="flex flex-wrap gap-1">
+            {ollama.models.map((model) => (
+              <span
+                key={model}
+                className="rounded-md border border-line bg-ink px-1.5 py-0.5 font-mono text-[10px] text-paper/80"
+              >
+                {model}
+              </span>
+            ))}
+          </div>
+        </>
+      ) : null}
+
+      {ollama?.reachable && ollama.models.length === 0 ? (
+        <>
+          <p className="text-[11px] leading-4 text-muted">
+            Ollama respondeu, mas nenhum modelo instalado.
+          </p>
+          <code className="block rounded-lg border border-line bg-ink px-2.5 py-1.5 font-mono text-[10px] text-paper/80">
+            ollama pull llama3.2
+          </code>
+        </>
+      ) : null}
+
+      {ollama && !ollama.reachable ? (
+        <div className="space-y-2">
+          <p className="text-[11px] leading-4 text-muted">
+            Ollama não detectado{ollama.error ? `: ${ollama.error}` : ''}.
+          </p>
+          <Button
+            type="button"
+            size="sm"
+            fullWidth={false}
+            variant="secondary"
+            loading={loading}
+            onClick={() => {
+              void handleRefresh()
+            }}
+          >
+            <Refresh className="h-3.5 w-3.5" />
+            Tentar novamente
+          </Button>
+        </div>
+      ) : null}
+
+      <Details label="Endereço personalizado">
+        <p className="text-[11px] leading-4 text-muted">
+          No Docker, o padrão costuma ser{' '}
+          <span className="font-mono text-paper/80">http://host.docker.internal:11434</span>.
+        </p>
+        <form className="space-y-2" onSubmit={handleSave}>
+          <Field
+            label="URL do Ollama"
+            value={url}
+            onChange={setUrl}
+            autoComplete="off"
+            placeholder={ollama?.base_url || 'http://host.docker.internal:11434'}
+            required={false}
+          />
+          {saveError ? <ErrorBanner message={saveError} /> : null}
+          {notice ? <Notice message={notice} /> : null}
+          <Button type="submit" size="sm" fullWidth={false} loading={saving}>
+            Salvar
+          </Button>
+        </form>
+      </Details>
+    </Card>
   )
 }
 
@@ -1214,14 +1398,11 @@ type ProviderRowProps = {
 }
 
 function ProviderRow({ provider, onChanged }: ProviderRowProps) {
-  const isOllama = provider.id === 'ollama'
   const [value, setValue] = useState('')
   const [saving, setSaving] = useState(false)
   const [removing, setRemoving] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
-  const [testing, setTesting] = useState(false)
-  const [ollama, setOllama] = useState<OllamaModelsResponse | null>(null)
 
   async function handleSave(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -1253,25 +1434,11 @@ function ProviderRow({ provider, onChanged }: ProviderRowProps) {
     try {
       await api.deleteProvider(provider.id)
       setNotice('Configuração removida.')
-      setOllama(null)
       onChanged(false)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Não foi possível remover.')
     } finally {
       setRemoving(false)
-    }
-  }
-
-  async function handleTest() {
-    setTesting(true)
-    setError('')
-    setNotice('')
-    try {
-      setOllama(await api.ollamaModels())
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Não foi possível testar o Ollama.')
-    } finally {
-      setTesting(false)
     }
   }
 
@@ -1305,8 +1472,8 @@ function ProviderRow({ provider, onChanged }: ProviderRowProps) {
 
       <form className="mt-2.5 space-y-2" onSubmit={handleSave}>
         <Field
-          label={isOllama ? 'URL base' : 'Chave de API'}
-          type={isOllama ? 'text' : 'password'}
+          label="Chave de API"
+          type="password"
           value={value}
           onChange={setValue}
           autoComplete="off"
@@ -1315,52 +1482,10 @@ function ProviderRow({ provider, onChanged }: ProviderRowProps) {
         />
         {error ? <ErrorBanner message={error} /> : null}
         {notice ? <Notice message={notice} /> : null}
-        <div className="flex flex-wrap items-center gap-2">
-          <Button type="submit" size="sm" fullWidth={false} loading={saving}>
-            Salvar
-          </Button>
-          {isOllama ? (
-            <Button
-              type="button"
-              size="sm"
-              fullWidth={false}
-              variant="secondary"
-              loading={testing}
-              onClick={handleTest}
-            >
-              Testar conexão
-            </Button>
-          ) : null}
-        </div>
+        <Button type="submit" size="sm" fullWidth={false} loading={saving}>
+          Salvar
+        </Button>
       </form>
-
-      {isOllama && ollama ? (
-        ollama.reachable ? (
-          <div className="mt-2 rounded-lg border border-line bg-ink px-3 py-2">
-            <p className="text-[11px] leading-4 text-muted">
-              {ollama.models.length === 0
-                ? 'O Ollama respondeu, mas nenhum modelo foi encontrado.'
-                : `${ollama.models.length} modelo(s) em ${ollama.base_url}`}
-            </p>
-            {ollama.models.length > 0 ? (
-              <div className="mt-1.5 flex flex-wrap gap-1">
-                {ollama.models.map((model) => (
-                  <span
-                    key={model}
-                    className="rounded-md border border-line bg-panel px-1.5 py-0.5 font-mono text-[10px] text-paper/80"
-                  >
-                    {model}
-                  </span>
-                ))}
-              </div>
-            ) : null}
-          </div>
-        ) : (
-          <p className="mt-2 rounded-lg border border-red-500/25 bg-red-500/10 px-3 py-2 text-[11px] leading-4 text-red-200">
-            Ollama não respondeu{ollama.error ? `: ${ollama.error}` : ''}.
-          </p>
-        )
-      ) : null}
     </div>
   )
 }
@@ -1409,7 +1534,7 @@ function VoiceSection() {
       </label>
 
       <p className="text-[11px] leading-4 text-muted">
-        O processamento de áudio chega no bloco de mídia. Nada é gravado ou enviado por esta tela.
+        O áudio chega no bloco de mídia. Nada é gravado por esta tela.
       </p>
     </Card>
   )
@@ -1488,15 +1613,10 @@ function HarnessesSection() {
 
 function ProjectMemorySection() {
   return (
-    <Card
-      title="Memória do projeto"
-      description="Contexto por workspace e projeto, em um só lugar."
-    >
-      <p className="text-[11px] leading-5 text-muted">
-        A memória do projeto chega no próximo bloco. Ela vai guardar decisões, arquivos e contexto
-        por workspace, com controle do que é lembrado.
+    <Card title="Memória do projeto">
+      <p className="text-[11px] leading-4 text-muted">
+        Contexto por workspace e projeto chega no próximo bloco. Nada é armazenado por esta tela.
       </p>
-      <p className="text-[11px] leading-5 text-muted">Nada é armazenado por esta tela hoje.</p>
     </Card>
   )
 }
@@ -1558,6 +1678,258 @@ function BackendSection() {
           <Stat label="Versão" value={health.version} />
         </div>
       ) : null}
+    </Card>
+  )
+}
+
+const TUNNEL_PROVIDERS: Array<{ id: TunnelProvider; label: string }> = [
+  { id: 'cloudflare_quick', label: 'Cloudflare rápido (sem conta)' },
+  { id: 'cloudflare_token', label: 'Cloudflare com token' },
+  { id: 'ngrok', label: 'ngrok' },
+]
+
+function TunnelSection() {
+  const [status, setStatus] = useState<TunnelStatus | null>(null)
+  const [provider, setProvider] = useState<TunnelProvider>('cloudflare_quick')
+  const [token, setToken] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [busy, setBusy] = useState<'start' | 'stop' | null>(null)
+  const [error, setError] = useState('')
+  const [copied, setCopied] = useState(false)
+
+  const refresh = useCallback(async () => {
+    try {
+      setStatus(await api.tunnelStatus())
+      setError('')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Não foi possível ler o túnel.')
+    }
+  }, [])
+
+  useEffect(() => {
+    let alive = true
+    setLoading(true)
+    api
+      .tunnelStatus()
+      .then((data) => {
+        if (alive) setStatus(data)
+      })
+      .catch((err: unknown) => {
+        if (alive) {
+          setError(err instanceof Error ? err.message : 'Não foi possível ler o túnel.')
+        }
+      })
+      .finally(() => {
+        if (alive) setLoading(false)
+      })
+    return () => {
+      alive = false
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!status?.running) return
+    const timer = window.setInterval(() => {
+      api
+        .tunnelStatus()
+        .then((data) => {
+          setStatus(data)
+          setError('')
+        })
+        .catch((err: unknown) => {
+          setError(err instanceof Error ? err.message : 'Não foi possível atualizar o túnel.')
+        })
+    }, 3000)
+    return () => window.clearInterval(timer)
+  }, [status?.running])
+
+  useEffect(() => {
+    if (!copied) return
+    const timer = window.setTimeout(() => setCopied(false), 2000)
+    return () => window.clearTimeout(timer)
+  }, [copied])
+
+  async function handleStart() {
+    setError('')
+
+    if (provider !== 'cloudflare_quick' && !token.trim()) {
+      setError('Informe o token do provedor.')
+      return
+    }
+
+    setBusy('start')
+    try {
+      await api.tunnelStart(provider, token.trim() || undefined)
+      setToken('')
+      await refresh()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Não foi possível iniciar o túnel.')
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  async function handleStop() {
+    setError('')
+    setBusy('stop')
+    try {
+      await api.tunnelStop()
+      await refresh()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Não foi possível encerrar o túnel.')
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  async function handleCopy() {
+    if (!status?.url) return
+    setCopied(await copyToClipboard(status.url))
+  }
+
+  const activeLabel = status?.provider
+    ? status.providers?.[status.provider] ?? status.provider
+    : ''
+
+  return (
+    <Card title="Túnel" description="Acesso público temporário a esta instalação.">
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-1.5">
+          <span
+            className={`h-1.5 w-1.5 rounded-full ${
+              status?.running ? 'bg-emerald-400' : 'bg-white/20'
+            }`}
+          />
+          <span className="text-[11.5px] font-medium text-paper">
+            {loading && !status ? 'Lendo...' : status?.running ? 'Conectado' : 'Desconectado'}
+          </span>
+        </div>
+        {status?.running ? <Chip tone="ok">{activeLabel}</Chip> : null}
+      </div>
+
+      {error ? <ErrorBanner message={error} /> : null}
+      {!error && status?.error ? <ErrorBanner message={status.error} /> : null}
+
+      {status?.running ? (
+        <div className="space-y-2">
+          {status.url ? (
+            <div className="flex items-center gap-1.5 rounded-lg border border-line bg-ink px-2.5 py-1.5">
+              <a
+                href={status.url}
+                target="_blank"
+                rel="noreferrer"
+                className="min-w-0 flex-1 truncate font-mono text-[11px] text-paper hover:text-accent"
+              >
+                {status.url}
+              </a>
+              <button
+                type="button"
+                onClick={() => {
+                  void handleCopy()
+                }}
+                aria-label={copied ? 'Link copiado' : 'Copiar link'}
+                title={copied ? 'Link copiado' : 'Copiar link'}
+                className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-1 text-[10.5px] font-medium transition-colors ${
+                  copied
+                    ? 'border-emerald-500/30 text-emerald-300'
+                    : 'border-line text-muted hover:text-paper'
+                }`}
+              >
+                {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+                {copied ? 'Copiado' : 'Copiar'}
+              </button>
+              <a
+                href={status.url}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1 rounded-md border border-line px-1.5 py-1 text-[10.5px] font-medium text-muted transition-colors hover:text-paper"
+              >
+                <LinkIcon className="h-3 w-3" />
+                Abrir
+              </a>
+            </div>
+          ) : (
+            <p className="text-[11px] text-muted">Aguardando endereço público...</p>
+          )}
+
+          {status.started_at ? (
+            <p className="text-[10.5px] text-muted">Desde {formatDateTime(status.started_at)}</p>
+          ) : null}
+
+          <Button
+            type="button"
+            size="sm"
+            fullWidth={false}
+            variant="secondary"
+            loading={busy === 'stop'}
+            onClick={() => {
+              void handleStop()
+            }}
+          >
+            Desconectar
+          </Button>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          <div className="grid gap-1.5 sm:grid-cols-3">
+            {TUNNEL_PROVIDERS.map((option) => {
+              const selected = provider === option.id
+              return (
+                <button
+                  key={option.id}
+                  type="button"
+                  aria-pressed={selected}
+                  onClick={() => {
+                    setProvider(option.id)
+                    setError('')
+                  }}
+                  className={`rounded-lg border px-2.5 py-2 text-left text-[11px] font-medium leading-4 transition-colors ${
+                    selected
+                      ? 'border-accent/50 bg-accent/[0.08] text-paper'
+                      : 'border-line bg-ink text-muted hover:text-paper'
+                  }`}
+                >
+                  {status?.providers?.[option.id] || option.label}
+                </button>
+              )
+            })}
+          </div>
+
+          {provider !== 'cloudflare_quick' ? (
+            <Field
+              label="Token"
+              type="password"
+              value={token}
+              onChange={setToken}
+              autoComplete="off"
+              placeholder={provider === 'ngrok' ? 'Token do ngrok' : 'Token do Cloudflare'}
+              required={false}
+            />
+          ) : null}
+
+          <Button
+            type="button"
+            size="sm"
+            fullWidth={false}
+            loading={busy === 'start'}
+            onClick={() => {
+              void handleStart()
+            }}
+          >
+            Conectar
+          </Button>
+        </div>
+      )}
+
+      <Details label="Log">
+        {status?.log?.length ? (
+          <pre className="max-h-40 overflow-auto whitespace-pre-wrap break-all rounded-lg border border-line bg-ink p-2 font-mono text-[10px] leading-4 text-muted">
+            {status.log.join('\n')}
+          </pre>
+        ) : (
+          <p className="text-[11px] text-muted">Sem registros.</p>
+        )}
+      </Details>
     </Card>
   )
 }
@@ -1662,7 +2034,7 @@ function NotificationsSection() {
   }
 
   return (
-    <Card title="Notificações" description="Avisos sobre o trabalho em segundo plano.">
+    <Card title="Notificações">
       <Toggle
         label="Novos agendamentos e jobs"
         checked={preferences.jobs}
@@ -1679,8 +2051,7 @@ function NotificationsSection() {
         onChange={(checked) => update({ errors: checked })}
       />
       <p className="text-[11px] leading-4 text-muted">
-        A entrega de notificações chega no bloco de jobs. Por enquanto, as preferências ficam
-        salvas neste navegador.
+        Preferências locais. A entrega chega no bloco de jobs.
       </p>
     </Card>
   )
@@ -1859,15 +2230,21 @@ function Stat({ label, value }: { label: string; value: string }) {
   )
 }
 
-function formatDuration(totalSeconds: number): string {
-  if (!Number.isFinite(totalSeconds) || totalSeconds <= 0) return '—'
-  const minutes = Math.max(1, Math.round(totalSeconds / 60))
+function formatLastSeen(iso: string): string {
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) return '—'
+
+  const minutes = Math.floor((Date.now() - date.getTime()) / 60000)
+  if (minutes < 1) return 'agora'
+  if (minutes < 60) return `${minutes} min atrás`
+
   const hours = Math.floor(minutes / 60)
-  const rest = minutes % 60
-  if (hours > 0) {
-    return rest > 0 ? `${hours} h ${rest} min` : `${hours} h`
-  }
-  return `${minutes} min`
+  if (hours < 24) return `${hours} h atrás`
+
+  const days = Math.floor(hours / 24)
+  if (days < 7) return `${days} d atrás`
+
+  return new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short' }).format(date)
 }
 
 function formatDateTime(iso: string): string {

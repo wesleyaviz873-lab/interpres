@@ -32,8 +32,14 @@ Atualizado em 2026-10-22.
   redefinir, para não trancar o dono fora).
 - Chaves de provedores cifradas com `APP_SECRET`; a API nunca devolve a chave
   salva, só o estado "configurada".
-- Detecção local do Ollama e listagem dos modelos instalados.
+- Detecção automática do Ollama e listagem dos modelos instalados, sem campo de
+  chave de API para o provedor local.
 - Detecção somente leitura dos agentes de código instalados no host.
+- Sessões com duração deslizante de 30 dias enquanto a conta é usada.
+- Lista de dispositivos conectados com revogação individual e "sair de todos".
+- Gerenciador de túnel com Cloudflare rápido (sem conta), Cloudflare com token
+  e ngrok; iniciar/parar e copiar/abrir a URL pública.
+- Imagem Docker inclui `cloudflared` e `ngrok`.
 - Preferências de aparência, voz e notificações no navegador; a aparência
   aplica tamanho de fonte e cor de destaque.
 - Configurações completas: Conta, Segurança, Chaves de API, Voz, Harnesses,
@@ -79,7 +85,7 @@ Atualizado em 2026-10-22.
 
 ### Verificação
 
-- `pytest`: 32 testes passando.
+- `pytest`: 38 testes passando.
 - `npm run build`: TypeScript e Vite passando.
 - Imagem Docker construída e container testado com:
   - criação do dono;
@@ -98,6 +104,7 @@ Atualizado em 2026-10-22.
 - OIDC / Cloudflare Access opcional.
 - Passkeys e outros métodos de segurança.
 - Configuração de SMTP pela interface (hoje é por `.env`).
+- Aprovação explícita de novo dispositivo (hoje o dono revoga os não usados).
 - Testes E2E de navegador.
 - CI no GitHub Actions.
 - Instalador `install.sh` / `install.ps1` e prompt de instalação por IA.

@@ -24,7 +24,7 @@ class Settings(BaseSettings):
     workspace_dir: Path = Path("./workspace")
     data_dir: Path = Path("./data")
     web_dist_dir: Path = Path("./apps/web/dist")
-    session_ttl_hours: int = 168
+    session_ttl_hours: int = 720
     auth_max_attempts: int = 10
     auth_window_minutes: int = 15
     allow_signup: bool = False
