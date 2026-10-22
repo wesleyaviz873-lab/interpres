@@ -5,13 +5,18 @@ import { ErrorBanner } from '../components/ErrorBanner'
 import { Field } from '../components/Field'
 import { Notice } from '../components/Notice'
 import { RecoveryCode } from '../components/RecoveryCode'
-import { Warning } from '../components/icons'
+import { Check, Copy, Warning } from '../components/icons'
+import { copyToClipboard } from '../lib/clipboard'
 import {
   api,
   type AuthResponse,
   type RecoveryMethods,
+  type RecoveryOptions,
   type ResetPasswordResponse,
 } from '../lib/api'
+
+const CLI_RESET_COMMAND =
+  'docker compose exec --user interpres interpres python -m app.cli reset-password --email seu@email.com --generate'
 
 type LoginPageProps = {
   onSuccess: (response: AuthResponse) => void
@@ -21,18 +26,26 @@ type LoginPageProps = {
 
 type LoginFormProps = {
   initialError: string
+  emailLoginAvailable: boolean
   onSuccess: (response: AuthResponse) => void
   onForgot: () => void
   onSetup: () => void
 }
 
-function LoginForm({ initialError, onSuccess, onForgot, onSetup }: LoginFormProps) {
+function LoginForm({
+  initialError,
+  emailLoginAvailable,
+  onSuccess,
+  onForgot,
+  onSetup,
+}: LoginFormProps) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [code, setCode] = useState('')
   const [challengeToken, setChallengeToken] = useState<string | null>(null)
   const [error, setError] = useState(initialError)
   const [loading, setLoading] = useState(false)
+  const [emailLogin, setEmailLogin] = useState(false)
 
   useEffect(() => {
     if (initialError) setError(initialError)
@@ -117,6 +130,10 @@ function LoginForm({ initialError, onSuccess, onForgot, onSetup }: LoginFormProp
     )
   }
 
+  if (emailLogin) {
+    return <EmailLoginForm onSuccess={onSuccess} onBack={() => setEmailLogin(false)} />
+  }
+
   return (
     <AuthLayout
       title="Entrar"
@@ -145,6 +162,16 @@ function LoginForm({ initialError, onSuccess, onForgot, onSetup }: LoginFormProp
         </Button>
       </form>
 
+      {emailLoginAvailable ? (
+        <button
+          type="button"
+          onClick={() => setEmailLogin(true)}
+          className="mt-2 w-full rounded-xl border border-line px-3.5 py-2.5 text-[12px] font-medium text-muted transition-colors hover:border-white/25 hover:text-paper"
+        >
+          Entrar com código por e-mail
+        </button>
+      ) : null}
+
       <div className="mt-3.5 text-center">
         <button
           type="button"
@@ -169,22 +196,24 @@ function LoginForm({ initialError, onSuccess, onForgot, onSetup }: LoginFormProp
   )
 }
 
-type EmailResetFormProps = {
-  onDone: (response: ResetPasswordResponse) => void
+type EmailLoginFormProps = {
+  onSuccess: (response: AuthResponse) => void
+  onBack: () => void
 }
 
-function EmailResetForm({ onDone }: EmailResetFormProps) {
-  const [step, setStep] = useState<'request' | 'reset'>('request')
+function EmailLoginForm({ onSuccess, onBack }: EmailLoginFormProps) {
+  const [step, setStep] = useState<'email' | 'code'>('email')
   const [email, setEmail] = useState('')
   const [code, setCode] = useState('')
-  const [password, setPassword] = useState('')
-  const [confirm, setConfirm] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [resending, setResending] = useState(false)
+  const [notice, setNotice] = useState('')
 
   async function handleRequest(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setError('')
+    setNotice('')
 
     if (!email.trim()) {
       setError('Informe o e-mail da conta.')
@@ -193,11 +222,9 @@ function EmailResetForm({ onDone }: EmailResetFormProps) {
 
     setLoading(true)
     try {
-      await api.forgotPassword(email.trim())
+      await api.emailCode(email.trim())
       setCode('')
-      setPassword('')
-      setConfirm('')
-      setStep('reset')
+      setStep('code')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Não foi possível enviar o código.')
     } finally {
@@ -205,9 +232,151 @@ function EmailResetForm({ onDone }: EmailResetFormProps) {
     }
   }
 
+  async function handleLogin(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setError('')
+    setNotice('')
+
+    if (!code.trim()) {
+      setError('Informe o código recebido.')
+      return
+    }
+
+    setLoading(true)
+    try {
+      const response = await api.emailLogin(email.trim(), code.trim())
+      onSuccess(response)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Código inválido. Tente novamente.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function handleResend() {
+    setError('')
+    setNotice('')
+    setResending(true)
+    try {
+      await api.emailCode(email.trim())
+      setNotice('Novo código enviado.')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Não foi possível reenviar o código.')
+    } finally {
+      setResending(false)
+    }
+  }
+
+  if (step === 'email') {
+    return (
+      <AuthLayout
+        title="Entrar com código"
+        subtitle="Enviamos um código de 6 dígitos para o e-mail da conta."
+      >
+        <form className="space-y-3" onSubmit={handleRequest}>
+          <Field
+            label="E-mail"
+            type="email"
+            value={email}
+            onChange={setEmail}
+            autoComplete="email"
+            placeholder="voce@exemplo.com"
+          />
+          {error ? <ErrorBanner message={error} /> : null}
+          <Button type="submit" loading={loading}>
+            Enviar código
+          </Button>
+        </form>
+
+        <div className="mt-3.5 text-center">
+          <button
+            type="button"
+            onClick={onBack}
+            className="text-[12px] font-medium text-muted underline-offset-2 transition-colors hover:text-accent hover:underline"
+          >
+            Voltar para o login com senha
+          </button>
+        </div>
+      </AuthLayout>
+    )
+  }
+
+  return (
+    <AuthLayout
+      title="Código por e-mail"
+      subtitle={`Digite o código enviado para ${email.trim()}.`}
+    >
+      <form className="space-y-3" onSubmit={handleLogin}>
+        <Field
+          label="Código recebido"
+          value={code}
+          onChange={setCode}
+          autoComplete="one-time-code"
+          placeholder="000000"
+        />
+        {error ? <ErrorBanner message={error} /> : null}
+        {notice ? <Notice message={notice} /> : null}
+        <Button type="submit" loading={loading}>
+          Entrar
+        </Button>
+      </form>
+
+      <div className="mt-3 flex items-center justify-between gap-2 text-[11px]">
+        <button
+          type="button"
+          onClick={() => {
+            setStep('email')
+            setCode('')
+            setError('')
+            setNotice('')
+          }}
+          className="font-medium text-muted underline-offset-2 transition-colors hover:text-accent hover:underline"
+        >
+          Trocar e-mail
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            void handleResend()
+          }}
+          disabled={resending}
+          className="font-medium text-muted underline-offset-2 transition-colors hover:text-accent hover:underline disabled:opacity-60"
+        >
+          {resending ? 'Enviando...' : 'Reenviar código'}
+        </button>
+      </div>
+
+      <div className="mt-3.5 text-center">
+        <button
+          type="button"
+          onClick={onBack}
+          className="text-[12px] font-medium text-muted underline-offset-2 transition-colors hover:text-accent hover:underline"
+        >
+          Voltar para o login com senha
+        </button>
+      </div>
+    </AuthLayout>
+  )
+}
+
+type EmailResetFormProps = {
+  email: string
+  onDone: (response: ResetPasswordResponse) => void
+}
+
+function EmailResetForm({ email, onDone }: EmailResetFormProps) {
+  const [code, setCode] = useState('')
+  const [password, setPassword] = useState('')
+  const [confirm, setConfirm] = useState('')
+  const [error, setError] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [resending, setResending] = useState(false)
+  const [notice, setNotice] = useState('')
+
   async function handleReset(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setError('')
+    setNotice('')
 
     if (!code.trim()) {
       setError('Informe o código recebido por e-mail.')
@@ -224,7 +393,7 @@ function EmailResetForm({ onDone }: EmailResetFormProps) {
 
     setLoading(true)
     try {
-      const response = await api.resetPassword(email.trim(), code.trim(), password)
+      const response = await api.resetPassword(email, code.trim(), password)
       onDone(response)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Não foi possível redefinir a senha.')
@@ -233,28 +402,23 @@ function EmailResetForm({ onDone }: EmailResetFormProps) {
     }
   }
 
-  if (step === 'request') {
-    return (
-      <form className="space-y-3" onSubmit={handleRequest}>
-        <Field
-          label="E-mail"
-          type="email"
-          value={email}
-          onChange={setEmail}
-          autoComplete="email"
-          placeholder="voce@exemplo.com"
-        />
-        {error ? <ErrorBanner message={error} /> : null}
-        <Button type="submit" loading={loading}>
-          Enviar código por e-mail
-        </Button>
-      </form>
-    )
+  async function handleResend() {
+    setError('')
+    setNotice('')
+    setResending(true)
+    try {
+      await api.forgotPassword(email)
+      setNotice('Novo código enviado.')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Não foi possível reenviar o código.')
+    } finally {
+      setResending(false)
+    }
   }
 
   return (
     <form className="space-y-3" onSubmit={handleReset}>
-      <Notice message="Código enviado para o e-mail informado. Confira a caixa de entrada." />
+      <Notice message={`Código enviado para ${email}. Confira a caixa de entrada.`} />
       <Field
         label="Código recebido"
         value={code}
@@ -281,6 +445,7 @@ function EmailResetForm({ onDone }: EmailResetFormProps) {
         placeholder="repita a senha"
       />
       {error ? <ErrorBanner message={error} /> : null}
+      {notice ? <Notice message={notice} /> : null}
       <Button type="submit" loading={loading}>
         Redefinir senha
       </Button>
@@ -289,15 +454,12 @@ function EmailResetForm({ onDone }: EmailResetFormProps) {
         <button
           type="button"
           onClick={() => {
-            setStep('request')
-            setCode('')
-            setPassword('')
-            setConfirm('')
-            setError('')
+            void handleResend()
           }}
-          className="text-[11px] font-medium text-muted underline-offset-2 transition-colors hover:text-accent hover:underline"
+          disabled={resending}
+          className="text-[11px] font-medium text-muted underline-offset-2 transition-colors hover:text-accent hover:underline disabled:opacity-60"
         >
-          Enviar para outro e-mail
+          {resending ? 'Enviando...' : 'Reenviar código'}
         </button>
       </div>
     </form>
@@ -305,11 +467,12 @@ function EmailResetForm({ onDone }: EmailResetFormProps) {
 }
 
 type CodeRecoverFormProps = {
+  email: string
   onDone: (response: ResetPasswordResponse) => void
 }
 
-function CodeRecoverForm({ onDone }: CodeRecoverFormProps) {
-  const [email, setEmail] = useState('')
+function CodeRecoverForm({ email: initialEmail, onDone }: CodeRecoverFormProps) {
+  const [email, setEmail] = useState(initialEmail)
   const [recoveryCode, setRecoveryCode] = useState('')
   const [password, setPassword] = useState('')
   const [confirm, setConfirm] = useState('')
@@ -401,59 +564,144 @@ function CodeRecoverForm({ onDone }: CodeRecoverFormProps) {
   )
 }
 
+type RecoverStep = 'lookup' | 'choose' | 'email' | 'code' | 'unavailable'
+
 type RecoverFormProps = {
-  emailAvailable: boolean
   onBack: () => void
   onRecovered: (response: ResetPasswordResponse, viaEmail: boolean) => void
 }
 
-function RecoverForm({ emailAvailable, onBack, onRecovered }: RecoverFormProps) {
-  const [method, setMethod] = useState<'email' | 'code'>(emailAvailable ? 'email' : 'code')
+function RecoverForm({ onBack, onRecovered }: RecoverFormProps) {
+  const [step, setStep] = useState<RecoverStep>('lookup')
+  const [email, setEmail] = useState('')
+  const [options, setOptions] = useState<RecoveryOptions | null>(null)
+  const [error, setError] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [sending, setSending] = useState(false)
 
-  const subtitle = emailAvailable
-    ? 'Receba um código por e-mail ou use o código de recuperação da conta.'
-    : 'Use o código de recuperação gerado na criação da conta ou na última troca de código.'
+  async function handleLookup(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setError('')
+
+    if (!email.trim()) {
+      setError('Informe o e-mail da conta.')
+      return
+    }
+
+    setLoading(true)
+    try {
+      const result = await api.recoveryOptions(email.trim())
+      setEmail(email.trim())
+      setOptions(result)
+      if (result.email_configured) {
+        setStep('choose')
+      } else if (result.has_recovery_code) {
+        setStep('code')
+      } else {
+        setStep('unavailable')
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Não foi possível consultar esta conta.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function handleSendCode() {
+    setError('')
+    setSending(true)
+    try {
+      await api.forgotPassword(email)
+      setStep('email')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Não foi possível enviar o código.')
+    } finally {
+      setSending(false)
+    }
+  }
+
+  function handleChangeEmail() {
+    setStep('lookup')
+    setOptions(null)
+    setError('')
+  }
+
+  const subtitle =
+    step === 'lookup'
+      ? 'Informe o e-mail da conta para ver o que está configurado nesta instalação.'
+      : 'Siga o caminho disponível para esta conta.'
 
   return (
-    <AuthLayout title="Recuperar acesso" subtitle={subtitle}>
-      {emailAvailable ? (
-        <div
-          role="group"
-          aria-label="Forma de recuperação"
-          className="mb-3 grid grid-cols-2 gap-1 rounded-xl border border-line bg-ink/60 p-1"
-        >
-          <button
+    <AuthLayout title="Esqueci minha senha" subtitle={subtitle}>
+      {step === 'lookup' ? (
+        <form className="space-y-3" onSubmit={handleLookup}>
+          <Field
+            label="E-mail"
+            type="email"
+            value={email}
+            onChange={setEmail}
+            autoComplete="email"
+            placeholder="voce@exemplo.com"
+          />
+          {error ? <ErrorBanner message={error} /> : null}
+          <Button type="submit" loading={loading}>
+            Continuar
+          </Button>
+        </form>
+      ) : null}
+
+      {step === 'choose' ? (
+        <div className="space-y-2.5">
+          <IdentityLine email={email} hint="Recuperação por e-mail disponível." />
+          {error ? <ErrorBanner message={error} /> : null}
+          <Button
             type="button"
-            aria-pressed={method === 'email'}
-            onClick={() => setMethod('email')}
-            className={`rounded-lg px-2.5 py-1.5 text-[11px] font-medium transition-colors ${
-              method === 'email'
-                ? 'bg-accent/15 text-accent'
-                : 'text-muted hover:text-paper'
-            }`}
+            loading={sending}
+            onClick={() => {
+              void handleSendCode()
+            }}
           >
-            Receber por e-mail
-          </button>
-          <button
-            type="button"
-            aria-pressed={method === 'code'}
-            onClick={() => setMethod('code')}
-            className={`rounded-lg px-2.5 py-1.5 text-[11px] font-medium transition-colors ${
-              method === 'code'
-                ? 'bg-accent/15 text-accent'
-                : 'text-muted hover:text-paper'
-            }`}
-          >
-            Usar código de recuperação
-          </button>
+            Receber código por e-mail
+          </Button>
+          {options?.has_recovery_code ? (
+            <button
+              type="button"
+              onClick={() => setStep('code')}
+              className="w-full rounded-xl border border-line px-3.5 py-2.5 text-[12px] font-medium text-muted transition-colors hover:border-white/25 hover:text-paper"
+            >
+              Usar código de recuperação
+            </button>
+          ) : null}
+          <BackToEmail onClick={handleChangeEmail} />
         </div>
       ) : null}
 
-      {method === 'email' ? (
-        <EmailResetForm onDone={(response) => onRecovered(response, true)} />
-      ) : (
-        <CodeRecoverForm onDone={(response) => onRecovered(response, false)} />
-      )}
+      {step === 'email' ? (
+        <EmailResetForm email={email} onDone={(response) => onRecovered(response, true)} />
+      ) : null}
+
+      {step === 'code' ? (
+        <CodeRecoverForm email={email} onDone={(response) => onRecovered(response, false)} />
+      ) : null}
+
+      {step === 'unavailable' ? (
+        <div className="space-y-3">
+          <div className="rounded-xl border border-line bg-ink/40 px-3.5 py-2.5">
+            <p className="text-[12px] font-medium text-paper">
+              Esta conta não tem recuperação configurada.
+            </p>
+            <p className="mt-1 text-[11px] leading-4 text-muted">
+              Redefina a senha no servidor com o comando abaixo.
+            </p>
+          </div>
+          <CommandBox command={CLI_RESET_COMMAND} />
+          <p className="text-[11px] leading-4 text-muted">
+            Configurar o SMTP no <span className="font-mono text-paper/80">.env</span> habilita a
+            recuperação por e-mail.
+          </p>
+          <BackToEmail onClick={handleChangeEmail} />
+        </div>
+      ) : null}
 
       <div className="mt-3.5 text-center">
         <button
@@ -465,6 +713,78 @@ function RecoverForm({ emailAvailable, onBack, onRecovered }: RecoverFormProps) 
         </button>
       </div>
     </AuthLayout>
+  )
+}
+
+function IdentityLine({ email, hint }: { email: string; hint: string }) {
+  return (
+    <div className="rounded-xl border border-line bg-ink/40 px-3.5 py-2.5">
+      <p className="truncate text-[12px] font-medium text-paper">{email}</p>
+      <p className="mt-0.5 text-[10.5px] leading-4 text-muted">{hint}</p>
+    </div>
+  )
+}
+
+function BackToEmail({ onClick }: { onClick: () => void }) {
+  return (
+    <div className="text-center">
+      <button
+        type="button"
+        onClick={onClick}
+        className="text-[11px] font-medium text-muted underline-offset-2 transition-colors hover:text-accent hover:underline"
+      >
+        Usar outro e-mail
+      </button>
+    </div>
+  )
+}
+
+function CommandBox({ command }: { command: string }) {
+  const [copied, setCopied] = useState(false)
+  const [failed, setFailed] = useState(false)
+
+  useEffect(() => {
+    if (!copied) return
+    const timer = window.setTimeout(() => setCopied(false), 2000)
+    return () => window.clearTimeout(timer)
+  }, [copied])
+
+  async function handleCopy() {
+    setFailed(false)
+    const ok = await copyToClipboard(command)
+    setCopied(ok)
+    setFailed(!ok)
+  }
+
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-start gap-2 rounded-xl border border-line bg-ink px-3 py-2">
+        <code className="min-w-0 flex-1 select-all break-all font-mono text-[10.5px] leading-4 text-paper/80">
+          {command}
+        </code>
+        <button
+          type="button"
+          onClick={() => {
+            void handleCopy()
+          }}
+          aria-label={copied ? 'Comando copiado' : 'Copiar comando'}
+          title={copied ? 'Comando copiado' : 'Copiar comando'}
+          className={`inline-flex shrink-0 items-center gap-1 rounded-md border px-2 py-1 text-[10.5px] font-medium transition-colors ${
+            copied
+              ? 'border-emerald-500/30 text-emerald-300'
+              : 'border-line text-muted hover:text-paper'
+          }`}
+        >
+          {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+          {copied ? 'Copiado' : 'Copiar'}
+        </button>
+      </div>
+      {failed ? (
+        <p className="text-[10.5px] leading-4 text-red-300">
+          Não foi possível copiar. Selecione o comando manualmente.
+        </p>
+      ) : null}
+    </div>
   )
 }
 
@@ -548,7 +868,6 @@ export function LoginPage({ onSuccess, onSetup, initialError = '' }: LoginPagePr
   if (mode === 'recover') {
     return (
       <RecoverForm
-        emailAvailable={methods?.email === true}
         onBack={() => setMode('login')}
         onRecovered={(response, viaEmail) => setRecovered({ response, viaEmail })}
       />
@@ -558,6 +877,7 @@ export function LoginPage({ onSuccess, onSetup, initialError = '' }: LoginPagePr
   return (
     <LoginForm
       initialError={initialError}
+      emailLoginAvailable={methods?.email === true}
       onSuccess={onSuccess}
       onForgot={() => setMode('recover')}
       onSetup={onSetup}

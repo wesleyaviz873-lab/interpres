@@ -25,7 +25,7 @@ from ..auth import (
 from ..config import settings
 from ..crypto import encrypt_secret
 from ..database import get_db
-from ..mailer import send_password_reset_code
+from ..mailer import send_login_code, send_password_reset_code
 from ..models import AuthSession, LoginChallenge, PasswordReset, User, utcnow
 from ..rate_limit import RateLimiter
 from ..security import (
@@ -79,6 +79,19 @@ class RecoverRequest(BaseModel):
 
 class ForgotPasswordRequest(BaseModel):
     email: EmailStr
+
+
+class RecoveryOptionsRequest(BaseModel):
+    email: EmailStr
+
+
+class EmailCodeRequest(BaseModel):
+    email: EmailStr
+
+
+class EmailLoginRequest(BaseModel):
+    email: EmailStr
+    code: str = Field(min_length=4, max_length=10)
 
 
 class ResetPasswordRequest(BaseModel):
@@ -302,6 +315,133 @@ def login_2fa(
     return {"user": _user_response(user), "csrf_token": auth_session.csrf_token}
 
 
+@router.post("/auth/recovery-options")
+def recovery_options(
+    body: RecoveryOptionsRequest,
+    db: Session = Depends(get_db),
+) -> dict[str, bool]:
+    user = find_user_by_email(db, normalize_email(str(body.email)))
+    return {
+        "email_configured": settings.smtp_configured,
+        "has_recovery_code": bool(user and user.recovery_code_hash),
+    }
+
+
+@router.post("/auth/email-code")
+def email_code(
+    body: EmailCodeRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> dict[str, bool]:
+    if not settings.smtp_configured:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Envio de e-mail não configurado. Use a senha ou o comando no servidor.",
+        )
+
+    email = normalize_email(str(body.email))
+    limit_key = _client_key(request, "emailcode", email)
+    if not _limiter.allow(limit_key):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Muitos pedidos. Tente novamente em alguns minutos.",
+        )
+    _limiter.hit(limit_key)
+
+    user = find_user_by_email(db, email)
+    if not user:
+        return {"ok": True}
+
+    code = _new_email_code()
+    db.execute(
+        delete(PasswordReset).where(
+            PasswordReset.user_id == user.id,
+            PasswordReset.purpose == "login",
+        )
+    )
+    db.add(
+        PasswordReset(
+            user_id=user.id,
+            code_hash=hash_password(code),
+            purpose="login",
+            expires_at=utcnow() + timedelta(minutes=15),
+        )
+    )
+    db.commit()
+    try:
+        send_login_code(user.email, code)
+    except Exception as exc:  # noqa: BLE001 - mail is best-effort
+        logger.warning("Falha ao enviar código de acesso: %s", exc)
+    audit(db, "auth.email_code_requested", user.id, request)
+    return {"ok": True}
+
+
+@router.post("/auth/email-login")
+def email_login(
+    body: EmailLoginRequest,
+    request: Request,
+    response: Response,
+    db: Session = Depends(get_db),
+) -> dict[str, object]:
+    if not settings.smtp_configured:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Envio de e-mail não configurado. Use a senha ou o comando no servidor.",
+        )
+
+    email = normalize_email(str(body.email))
+    limit_key = _client_key(request, "emaillogin", email)
+    if not _limiter.allow(limit_key):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Muitas tentativas. Tente novamente em alguns minutos.",
+        )
+
+    user = find_user_by_email(db, email)
+    invalid = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Código inválido ou expirado.",
+    )
+    if not user:
+        _limiter.hit(limit_key)
+        raise invalid
+
+    challenge = db.scalar(
+        select(PasswordReset)
+        .where(
+            PasswordReset.user_id == user.id,
+            PasswordReset.purpose == "login",
+            PasswordReset.used_at.is_(None),
+        )
+        .order_by(PasswordReset.created_at.desc())
+    )
+    if not challenge or challenge.expires_at <= utcnow():
+        _limiter.hit(limit_key)
+        raise invalid
+
+    if challenge.attempts >= 5:
+        challenge.used_at = utcnow()
+        db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Muitas tentativas. Peça um novo código.",
+        )
+
+    challenge.attempts += 1
+    if not verify_password(body.code.strip(), challenge.code_hash):
+        db.commit()
+        _limiter.hit(limit_key)
+        raise invalid
+
+    _limiter.reset(limit_key)
+    challenge.used_at = utcnow()
+    db.commit()
+    auth_session, token = create_session(db, user, request)
+    audit(db, "auth.email_login", user.id, request)
+    set_session_cookie(response, token)
+    return {"user": _user_response(user), "csrf_token": auth_session.csrf_token}
+
+
 @router.post("/auth/forgot-password")
 def forgot_password(
     body: ForgotPasswordRequest,
@@ -333,6 +473,7 @@ def forgot_password(
         PasswordReset(
             user_id=user.id,
             code_hash=hash_password(code),
+            purpose="reset",
             expires_at=utcnow() + timedelta(minutes=15),
         )
     )
@@ -380,6 +521,7 @@ def reset_password(
         select(PasswordReset)
         .where(
             PasswordReset.user_id == user.id,
+            PasswordReset.purpose == "reset",
             PasswordReset.used_at.is_(None),
         )
         .order_by(PasswordReset.created_at.desc())

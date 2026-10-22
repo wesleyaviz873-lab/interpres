@@ -34,6 +34,11 @@ export type RecoveryMethods = {
   admin_cli: true
 }
 
+export type RecoveryOptions = {
+  email_configured: boolean
+  has_recovery_code: boolean
+}
+
 export type TwoFactorStatus = {
   enabled: boolean
   backup_codes_remaining: number
@@ -117,16 +122,22 @@ export type OllamaModelsResponse = {
   error?: string
 }
 
-export type AgentInfo = {
+export type HarnessInfo = {
   id: string
   name: string
-  command: string
-  color: string
+  description: string
+  package: string
   installed: boolean
+  enabled: boolean
 }
 
-export type AgentsResponse = {
-  agents: AgentInfo[]
+export type HarnessesResponse = {
+  harnesses: HarnessInfo[]
+}
+
+export type HarnessTestResult = {
+  ok: boolean
+  output: string
 }
 
 export type HealthResponse = {
@@ -201,12 +212,33 @@ export const api = {
     })
   },
 
+  emailCode(email: string): Promise<OkResponse> {
+    return request<OkResponse>('/api/auth/email-code', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    })
+  },
+
+  emailLogin(email: string, code: string): Promise<AuthResponse> {
+    return request<AuthResponse>('/api/auth/email-login', {
+      method: 'POST',
+      body: JSON.stringify({ email, code }),
+    })
+  },
+
   me(): Promise<MeResponse> {
     return request<MeResponse>('/api/auth/me')
   },
 
   recoveryMethods(): Promise<RecoveryMethods> {
     return request<RecoveryMethods>('/api/auth/recovery-methods')
+  },
+
+  recoveryOptions(email: string): Promise<RecoveryOptions> {
+    return request<RecoveryOptions>('/api/auth/recovery-options', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    })
   },
 
   forgotPassword(email: string): Promise<OkResponse> {
@@ -347,8 +379,27 @@ export const api = {
     return request<OllamaModelsResponse>('/api/providers/ollama/models')
   },
 
-  agents(): Promise<AgentsResponse> {
-    return request<AgentsResponse>('/api/agents')
+  harnesses(): Promise<HarnessesResponse> {
+    return request<HarnessesResponse>('/api/harnesses')
+  },
+
+  installHarness(id: string): Promise<HarnessInfo> {
+    return request<HarnessInfo>(`/api/harnesses/${encodeURIComponent(id)}/install`, {
+      method: 'POST',
+    })
+  },
+
+  toggleHarness(id: string, enabled: boolean): Promise<HarnessInfo> {
+    return request<HarnessInfo>(`/api/harnesses/${encodeURIComponent(id)}/toggle`, {
+      method: 'POST',
+      body: JSON.stringify({ enabled }),
+    })
+  },
+
+  testHarness(id: string): Promise<HarnessTestResult> {
+    return request<HarnessTestResult>(`/api/harnesses/${encodeURIComponent(id)}/test`, {
+      method: 'POST',
+    })
   },
 
   health(): Promise<HealthResponse> {

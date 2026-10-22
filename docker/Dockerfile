@@ -14,7 +14,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends gosu curl ca-certificates tar \
+    && apt-get install -y --no-install-recommends gosu curl ca-certificates tar nodejs npm \
     && rm -rf /var/lib/apt/lists/* \
     && addgroup --system interpres \
     && adduser --system --ingroup interpres interpres \
@@ -23,7 +23,10 @@ RUN apt-get update \
     && chmod +x /usr/local/bin/cloudflared \
     && curl -fsSL "https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-linux-${TARGETARCH}.tgz" \
         | tar xz -C /usr/local/bin \
-    && chmod +x /usr/local/bin/ngrok
+    && chmod +x /usr/local/bin/ngrok \
+    && mkdir -p /opt/interpres/harnesses \
+    && npm install --prefix /opt/interpres/harnesses --no-audit --no-fund opencode-ai \
+    && chown -R interpres:interpres /opt/interpres
 
 WORKDIR /app
 COPY apps/api/requirements.txt ./

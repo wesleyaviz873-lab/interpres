@@ -9,8 +9,9 @@ import {
 } from 'react'
 import {
   api,
-  type AgentInfo,
   type DeviceInfo,
+  type HarnessInfo,
+  type HarnessTestResult,
   type HealthResponse,
   type OllamaModelsResponse,
   type ProviderInfo,
@@ -107,7 +108,12 @@ const SECTIONS: SectionDefinition[] = [
     Icon: Key,
   },
   { id: 'voz', label: 'Voz', description: 'Preferências de áudio.', Icon: Mic },
-  { id: 'harnesses', label: 'Harnesses', description: 'Agentes locais detectados.', Icon: Terminal },
+  {
+    id: 'harnesses',
+    label: 'Harnesses',
+    description: 'Agentes que rodam no workspace.',
+    Icon: Terminal,
+  },
   {
     id: 'memoria',
     label: 'Memória do Projeto',
@@ -350,6 +356,35 @@ function Chip({ tone, children }: { tone: 'ok' | 'off' | 'warn'; children: React
   )
 }
 
+type SwitchProps = {
+  label: string
+  checked: boolean
+  disabled?: boolean
+  onChange: (checked: boolean) => void
+}
+
+function Switch({ label, checked, disabled = false, onChange }: SwitchProps) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={label}
+      onClick={() => onChange(!checked)}
+      disabled={disabled}
+      className={`relative h-5 w-9 shrink-0 rounded-full transition-colors disabled:opacity-60 ${
+        checked ? 'bg-accent' : 'bg-white/10'
+      }`}
+    >
+      <span
+        className={`absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white transition-transform ${
+          checked ? 'translate-x-4' : 'translate-x-0'
+        }`}
+      />
+    </button>
+  )
+}
+
 type ToggleProps = {
   label: string
   description?: string
@@ -366,22 +401,7 @@ function Toggle({ label, description, checked, onChange }: ToggleProps) {
           <p className="text-[10.5px] leading-4 text-muted">{description}</p>
         ) : null}
       </div>
-      <button
-        type="button"
-        role="switch"
-        aria-checked={checked}
-        aria-label={label}
-        onClick={() => onChange(!checked)}
-        className={`relative h-5 w-9 shrink-0 rounded-full transition-colors ${
-          checked ? 'bg-accent' : 'bg-white/10'
-        }`}
-      >
-        <span
-          className={`absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white transition-transform ${
-            checked ? 'translate-x-4' : 'translate-x-0'
-          }`}
-        />
-      </button>
+      <Switch label={label} checked={checked} onChange={onChange} />
     </div>
   )
 }
@@ -1541,16 +1561,16 @@ function VoiceSection() {
 }
 
 function HarnessesSection() {
-  const [agents, setAgents] = useState<AgentInfo[] | null>(null)
+  const [harnesses, setHarnesses] = useState<HarnessInfo[] | null>(null)
   const [error, setError] = useState('')
 
   const refresh = useCallback(async () => {
     try {
-      const data = await api.agents()
-      setAgents(data.agents)
+      const data = await api.harnesses()
+      setHarnesses(data.harnesses)
       setError('')
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Não foi possível detectar os agentes.')
+      setError(err instanceof Error ? err.message : 'Não foi possível ler os harnesses.')
     }
   }, [])
 
@@ -1558,10 +1578,16 @@ function HarnessesSection() {
     void refresh()
   }, [refresh])
 
+  function handleChange(updated: HarnessInfo) {
+    setHarnesses((current) =>
+      current ? current.map((item) => (item.id === updated.id ? updated : item)) : current,
+    )
+  }
+
   return (
     <Card
       title="Harnesses"
-      description="Agentes de linha de comando detectados nesta instalação."
+      description="Agentes de linha de comando que rodam no workspace desta instalação."
       action={
         <Button
           type="button"
@@ -1578,36 +1604,166 @@ function HarnessesSection() {
       }
     >
       {error ? <ErrorBanner message={error} /> : null}
-      {!agents && !error ? <p className="text-[11px] text-muted">Detectando agentes...</p> : null}
-      {agents && agents.length === 0 ? (
-        <p className="text-[11px] text-muted">Nenhum agente detectado.</p>
+      {!harnesses && !error ? <p className="text-[11px] text-muted">Lendo harnesses...</p> : null}
+      {harnesses && harnesses.length === 0 ? (
+        <p className="text-[11px] text-muted">Nenhum harness disponível.</p>
       ) : null}
 
-      {agents && agents.length > 0 ? (
+      {harnesses && harnesses.length > 0 ? (
         <ul className="divide-y divide-line overflow-hidden rounded-lg border border-line bg-ink/40">
-          {agents.map((agent) => (
-            <li key={agent.id} className="flex items-center gap-3 px-3 py-2">
-              <span
-                className="h-2 w-2 shrink-0 rounded-full"
-                style={{ backgroundColor: agent.color || '#f97316' }}
-              />
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-[12px] font-medium text-paper">{agent.name}</p>
-                <p className="truncate font-mono text-[10.5px] text-muted">{agent.command}</p>
-              </div>
-              <Chip tone={agent.installed ? 'ok' : 'off'}>
-                {agent.installed ? 'Instalado' : 'Ausente'}
-              </Chip>
-            </li>
+          {harnesses.map((harness) => (
+            <HarnessRow key={harness.id} harness={harness} onChange={handleChange} />
           ))}
         </ul>
       ) : null}
 
       <p className="text-[11px] leading-4 text-muted">
-        A execução de agentes chega no bloco do agente local. Esta tela apenas detecta o que
-        existe no servidor.
+        Os harnesses rodam no workspace desta instalação. O controle do PC inteiro chega com o
+        agente local.
       </p>
     </Card>
+  )
+}
+
+type HarnessRowProps = {
+  harness: HarnessInfo
+  onChange: (harness: HarnessInfo) => void
+}
+
+function HarnessRow({ harness, onChange }: HarnessRowProps) {
+  const [installing, setInstalling] = useState(false)
+  const [toggling, setToggling] = useState(false)
+  const [testing, setTesting] = useState(false)
+  const [error, setError] = useState('')
+  const [test, setTest] = useState<HarnessTestResult | null>(null)
+
+  async function handleInstall() {
+    setError('')
+    setTest(null)
+    setInstalling(true)
+    try {
+      onChange(await api.installHarness(harness.id))
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Não foi possível baixar o harness.')
+    } finally {
+      setInstalling(false)
+    }
+  }
+
+  async function handleToggle(next: boolean) {
+    setError('')
+    setToggling(true)
+    try {
+      onChange(await api.toggleHarness(harness.id, next))
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Não foi possível alterar o harness.')
+    } finally {
+      setToggling(false)
+    }
+  }
+
+  async function handleTest() {
+    setError('')
+    setTesting(true)
+    try {
+      setTest(await api.testHarness(harness.id))
+    } catch (err) {
+      setTest(null)
+      setError(err instanceof Error ? err.message : 'Não foi possível testar o harness.')
+    } finally {
+      setTesting(false)
+    }
+  }
+
+  return (
+    <li className="px-3 py-2.5">
+      <div className="flex flex-wrap items-start gap-x-3 gap-y-1.5">
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <p className="text-[12px] font-medium text-paper">{harness.name}</p>
+            <Chip tone={harness.installed ? 'ok' : 'off'}>
+              {harness.installed ? 'Instalado' : 'Não instalado'}
+            </Chip>
+            <Chip tone={harness.enabled ? 'ok' : 'off'}>
+              {harness.enabled ? 'Ativo' : 'Desativado'}
+            </Chip>
+          </div>
+          {harness.description ? (
+            <p className="mt-0.5 text-[10.5px] leading-4 text-muted">{harness.description}</p>
+          ) : null}
+          <p className="truncate font-mono text-[10px] text-muted/80">{harness.package}</p>
+        </div>
+
+        <div className="flex shrink-0 items-center gap-2 self-center">
+          {harness.installed ? (
+            <>
+              <Switch
+                label={harness.enabled ? `Desativar ${harness.name}` : `Ativar ${harness.name}`}
+                checked={harness.enabled}
+                disabled={toggling}
+                onChange={(next) => {
+                  void handleToggle(next)
+                }}
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  void handleTest()
+                }}
+                disabled={testing}
+                className="rounded-md border border-line px-2 py-1 text-[10.5px] font-medium text-muted transition-colors hover:border-white/25 hover:text-paper disabled:opacity-60"
+              >
+                {testing ? 'Testando...' : 'Testar'}
+              </button>
+            </>
+          ) : (
+            <button
+              type="button"
+              onClick={() => {
+                void handleInstall()
+              }}
+              disabled={installing}
+              className="inline-flex items-center gap-1 rounded-md border border-line px-2 py-1 text-[10.5px] font-medium text-muted transition-colors hover:border-white/25 hover:text-paper disabled:opacity-60"
+            >
+              <Download className="h-3 w-3" />
+              {installing ? 'Baixando...' : 'Baixar'}
+            </button>
+          )}
+        </div>
+      </div>
+
+      {installing ? (
+        <p className="mt-1.5 text-[10.5px] leading-4 text-muted">
+          Isso pode demorar alguns minutos.
+        </p>
+      ) : null}
+      {error ? <p className="mt-1.5 text-[10.5px] leading-4 text-red-300">{error}</p> : null}
+
+      {test ? (
+        <div className="mt-2">
+          <div className="flex items-center gap-1.5">
+            <span
+              className={`h-1.5 w-1.5 rounded-full ${
+                test.ok ? 'bg-emerald-400' : 'bg-red-400'
+              }`}
+            />
+            <span className="text-[10.5px] text-muted">
+              {test.ok ? 'Teste ok' : 'Teste falhou'}
+            </span>
+            <button
+              type="button"
+              onClick={() => setTest(null)}
+              className="ml-auto text-[10.5px] text-muted transition-colors hover:text-paper"
+            >
+              Ocultar
+            </button>
+          </div>
+          <pre className="mt-1 max-h-28 overflow-auto whitespace-pre-wrap break-all rounded-lg border border-line bg-ink p-2 font-mono text-[10px] leading-4 text-paper/80">
+            {test.output || 'Sem saída.'}
+          </pre>
+        </div>
+      ) : null}
+    </li>
   )
 }
 

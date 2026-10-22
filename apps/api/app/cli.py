@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import getpass
+import secrets
 import sys
 
 from sqlalchemy import select
@@ -27,14 +28,17 @@ def _cmd_reset_password(args: argparse.Namespace) -> int:
             print(f"Nenhuma conta encontrada para {args.email}.", file=sys.stderr)
             return 1
 
-        password = getpass.getpass("Nova senha (mínimo 10 caracteres): ")
-        confirm = getpass.getpass("Confirme a nova senha: ")
-        if len(password) < 10:
-            print("A senha precisa ter pelo menos 10 caracteres.", file=sys.stderr)
-            return 2
-        if password != confirm:
-            print("As duas senhas não são iguais.", file=sys.stderr)
-            return 2
+        if args.generate:
+            password = secrets.token_urlsafe(12)
+        else:
+            password = getpass.getpass("Nova senha (mínimo 10 caracteres): ")
+            confirm = getpass.getpass("Confirme a nova senha: ")
+            if len(password) < 10:
+                print("A senha precisa ter pelo menos 10 caracteres.", file=sys.stderr)
+                return 2
+            if password != confirm:
+                print("As duas senhas não são iguais.", file=sys.stderr)
+                return 2
 
         updated, code = reset_password(db, args.email, password)
         if not updated or not code:
@@ -42,6 +46,8 @@ def _cmd_reset_password(args: argparse.Namespace) -> int:
             return 1
 
         print(f"Senha redefinida para {updated.email}.")
+        if args.generate:
+            print(f"Senha temporária: {password}")
         print(f"Novo código de recuperação: {code}")
         print("Guarde este código: ele não será mostrado novamente.")
         print("Todas as sessões antigas foram encerradas.")
@@ -73,6 +79,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Redefine a senha do dono e gera um novo código de recuperação.",
     )
     reset.add_argument("--email", required=True, help="E-mail da conta de dono.")
+    reset.add_argument(
+        "--generate",
+        action="store_true",
+        help="Gera uma senha temporária e imprime na tela, sem perguntar nada.",
+    )
     reset.set_defaults(func=_cmd_reset_password)
 
     listing = subparsers.add_parser("list-users", help="Lista as contas da instalação.")
