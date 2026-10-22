@@ -100,6 +100,35 @@ export function Shield({ className }: IconProps) {
   )
 }
 
+export function ShieldCheck({ className }: IconProps) {
+  return (
+    <IconShell className={className}>
+      <path d="M12 3l7 3v5.2c0 4.4-2.9 7.6-7 9.3-4.1-1.7-7-4.9-7-9.3V6l7-3Z" />
+      <path d="m8.5 12 2.5 2.5L16 9.5" />
+    </IconShell>
+  )
+}
+
+export function Smartphone({ className }: IconProps) {
+  return (
+    <IconShell className={className}>
+      <rect x="6.5" y="2.5" width="11" height="19" rx="2.5" />
+      <path d="M10.5 18.5h3" />
+    </IconShell>
+  )
+}
+
+export function QrCode({ className }: IconProps) {
+  return (
+    <IconShell className={className}>
+      <rect x="3.5" y="3.5" width="6" height="6" rx="1" />
+      <rect x="14.5" y="3.5" width="6" height="6" rx="1" />
+      <rect x="3.5" y="14.5" width="6" height="6" rx="1" />
+      <path d="M14.5 14.5h2.5v2.5M20.5 14.5v.01M14.5 20.5h.01M20.5 20.5v-3" />
+    </IconShell>
+  )
+}
+
 export function Menu({ className }: IconProps) {
   return (
     <IconShell className={className}>

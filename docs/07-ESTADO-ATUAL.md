@@ -24,6 +24,12 @@ Atualizado em 2026-10-22.
 - `POST /api/auth/logout-all`: encerra todas as sessões da conta.
 - Senhas com Argon2id (`pwdlib`).
 - Código de recuperação de uso único, com hash Argon2 no banco.
+- Recuperação por e-mail opcional: código de 6 dígitos, hash Argon2, validade de
+  15 minutos, limite de tentativas e envio por SMTP.
+- 2FA opcional (TOTP/Google Authenticator): QR code, segredo cifrado com
+  `APP_SECRET`, códigos de backup de uso único e desafio de login separado.
+- CLI administrativo: `list-users` e `reset-password` (também desativa 2FA ao
+  redefinir, para não trancar o dono fora).
 - Sessão com token opaco; o banco guarda apenas o hash SHA-256.
 - Cookie `HttpOnly`, `SameSite=Lax`, `Secure` quando a URL é HTTPS.
 - CSRF obrigatório em `POST/PUT/PATCH/DELETE` autenticados.
@@ -62,7 +68,7 @@ Atualizado em 2026-10-22.
 
 ### Verificação
 
-- `pytest`: 20 testes passando.
+- `pytest`: 28 testes passando.
 - `npm run build`: TypeScript e Vite passando.
 - Imagem Docker construída e container testado com:
   - criação do dono;
@@ -79,8 +85,8 @@ Atualizado em 2026-10-22.
 - Criptografia de chaves de API.
 - Agente local.
 - OIDC / Cloudflare Access opcional.
-- 2FA, passkeys e outros métodos de segurança.
-- Reset de senha por CLI (para quem perder o código e o acesso).
+- Passkeys e outros métodos de segurança.
+- Configuração de SMTP pela interface (hoje é por `.env`).
 - Testes E2E de navegador.
 - CI no GitHub Actions.
 - Instalador `install.sh` / `install.ps1` e prompt de instalação por IA.

@@ -6,3 +6,6 @@ pydantic-settings>=2.4,<3
 pydantic[email]>=2.8,<3
 pwdlib[argon2]>=0.2,<1
 python-multipart>=0.0.9,<1
+pyotp>=2.9,<3
+qrcode[pil]>=7.4,<9
+cryptography>=43,<47

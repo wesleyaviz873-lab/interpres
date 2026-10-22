@@ -29,6 +29,13 @@ class Settings(BaseSettings):
     auth_window_minutes: int = 15
     allow_signup: bool = False
 
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: str = ""
+    smtp_from: str = ""
+    smtp_security: str = "starttls"  # starttls | ssl | none
+
     @property
     def is_production(self) -> bool:
         return self.app_env.lower() == "production"
@@ -36,6 +43,10 @@ class Settings(BaseSettings):
     @property
     def cookie_secure(self) -> bool:
         return self.app_url.lower().startswith("https://")
+
+    @property
+    def smtp_configured(self) -> bool:
+        return bool(self.smtp_host.strip() and self.smtp_from.strip())
 
     @model_validator(mode="after")
     def _validate_production_secret(self) -> "Settings":

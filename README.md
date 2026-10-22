@@ -15,7 +15,12 @@ owner account, like a self-hosted n8n. There is no public signup.
 - First-run owner creation (`/api/setup`) with a one-time recovery code.
 - Login, logout and server-side sessions with HttpOnly cookies.
 - Show/hide password on every password field.
-- Password recovery with the one-time recovery code; no e-mail provider required.
+- Password recovery with the one-time recovery code.
+- Optional password recovery by e-mail: a 6-digit code is sent when SMTP is
+  configured.
+- Optional TOTP two-factor authentication (Google Authenticator) with QR code
+  and one-time backup codes.
+- Admin CLI: `list-users` and `reset-password` for the server owner.
 - Account settings: change e-mail, change password, rotate the recovery code and
   log out of every device.
 - CSRF protection on state-changing requests.
@@ -44,9 +49,15 @@ docker compose up -d
 ```
 
 Open <http://localhost:3000>. The first visit asks you to create the owner
-account and shows a **one-time recovery code**. Save it before entering: it is
-the only way to recover the password without an e-mail provider. There is no
+account and shows a **one-time recovery code**. You can enter without saving it,
+but it is the fallback when e-mail recovery is not configured. There is no
 public signup.
+
+For the simpler "forgot password" by e-mail, fill the `SMTP_*` variables in
+`.env` before starting. The login page then offers a 6-digit code sent to the
+account e-mail. Without SMTP, the recovery code and the admin CLI remain
+available. TOTP two-factor is optional and can be enabled later in
+**Configurações → Segurança**.
 
 To stop:
 
@@ -123,6 +134,10 @@ The built files go to `apps/web/dist` and are served by the API when
 - Session cookies are `HttpOnly`, `SameSite=Lax` and become `Secure` when
   `APP_URL` starts with `https://`.
 - Passwords use Argon2id. API keys will be encrypted at rest in the next block.
+- TOTP secrets are encrypted at rest with `APP_SECRET`; backup codes are stored
+  as HMAC hashes and consumed once.
+- Password reset codes are hashed, expire in 15 minutes and are rate limited.
+- SMTP is optional and never required for the installation to run.
 - The workspace will be a single explicit directory; the AI will not receive
   access to the whole disk.
 - See [docs/02-SEGURANCA.md](docs/02-SEGURANCA.md) and [SECURITY.md](SECURITY.md).

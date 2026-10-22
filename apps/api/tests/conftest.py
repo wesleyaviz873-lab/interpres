@@ -11,6 +11,9 @@ os.environ["APP_ENV"] = "test"
 os.environ["APP_SECRET"] = "test-secret"
 os.environ["DATABASE_URL"] = f"sqlite:///{TEST_DB}"
 os.environ["WEB_DIST_DIR"] = str(Path(tempfile.gettempdir()) / "interpres_no_dist")
+os.environ["SMTP_HOST"] = "smtp.example.com"
+os.environ["SMTP_FROM"] = "no-reply@example.com"
+os.environ["SMTP_SECURITY"] = "none"
 
 from fastapi.testclient import TestClient  # noqa: E402
 

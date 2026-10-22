@@ -1,16 +1,29 @@
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
-import { api, type SessionInfo, type User } from '../lib/api'
+import {
+  api,
+  type RecoveryMethods,
+  type SessionInfo,
+  type TwoFactorSetupResponse,
+  type TwoFactorStatus,
+  type User,
+} from '../lib/api'
+import { copyToClipboard } from '../lib/clipboard'
 import { Button } from './Button'
 import { ErrorBanner } from './ErrorBanner'
 import { Field } from './Field'
+import { Notice } from './Notice'
 import { RecoveryCode } from './RecoveryCode'
 import {
+  Check,
+  Copy,
+  Download,
   Key,
   Logout,
   Mail,
   Refresh,
   Settings,
   Shield,
+  ShieldCheck,
   User as UserIcon,
   Warning,
   X,
@@ -131,17 +144,6 @@ function Section({ title, description, icon, children }: SectionProps) {
       {description ? <p className="mt-0.5 text-[11px] leading-4 text-muted">{description}</p> : null}
       <div className="mt-3 space-y-2.5">{children}</div>
     </section>
-  )
-}
-
-function Notice({ message }: { message: string }) {
-  return (
-    <p
-      role="status"
-      className="rounded-xl border border-emerald-500/25 bg-emerald-500/10 px-3.5 py-2.5 text-[12px] leading-5 text-emerald-200"
-    >
-      {message}
-    </p>
   )
 }
 
@@ -414,6 +416,9 @@ function SecuritySection({ user, onSessionEnded }: SecuritySectionProps) {
         </p>
       </Section>
 
+      <EmailRecoverySection />
+      <TwoFactorSection />
+
       <Section
         title="Encerrar sessões"
         description="Sai deste dispositivo e de qualquer outro onde a conta esteja aberta."
@@ -464,17 +469,472 @@ function SecuritySection({ user, onSessionEnded }: SecuritySectionProps) {
         )}
         {endError ? <ErrorBanner message={endError} /> : null}
       </Section>
+    </div>
+  )
+}
 
-      <Section
-        title="Outros métodos"
-        description="Autenticação em dois fatores, passkeys e login por OIDC entram em blocos futuros."
-        icon={<Key className="h-4 w-4" />}
+function EmailRecoverySection() {
+  const [methods, setMethods] = useState<RecoveryMethods | null>(null)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    let alive = true
+    api
+      .recoveryMethods()
+      .then((data) => {
+        if (alive) setMethods(data)
+      })
+      .catch((err: unknown) => {
+        if (alive) {
+          setError(
+            err instanceof Error
+              ? err.message
+              : 'Não foi possível ler os métodos de recuperação.',
+          )
+        }
+      })
+    return () => {
+      alive = false
+    }
+  }, [])
+
+  return (
+    <Section
+      title="Recuperação por e-mail"
+      description="Permite redefinir a senha com um código enviado para a caixa de entrada."
+      icon={<Mail className="h-4 w-4" />}
+    >
+      {error ? <ErrorBanner message={error} /> : null}
+      {!methods && !error ? <p className="text-[12px] text-muted">Lendo métodos...</p> : null}
+      {methods?.email ? (
+        <Notice message="Ativa — o código de redefinição é enviado para o e-mail da conta." />
+      ) : null}
+      {methods && !methods.email ? (
+        <div className="space-y-2">
+          <p className="rounded-xl border border-line bg-ink/60 px-3.5 py-2.5 text-[11px] leading-4 text-muted">
+            Desativada — configure SMTP no <span className="font-mono text-paper/80">.env</span>{' '}
+            e reinicie o servidor.
+          </p>
+          <p className="text-[11px] leading-4 text-muted">
+            Enquanto isso, o dono do servidor pode redefinir a senha pela CLI:
+          </p>
+          <code className="block break-all rounded-lg border border-line bg-ink px-3 py-2 font-mono text-[10px] text-paper/80">
+            docker compose exec --user interpres interpres python -m app.cli reset-password --email seu@email.com
+          </code>
+        </div>
+      ) : null}
+    </Section>
+  )
+}
+
+function TwoFactorSection() {
+  const [status, setStatus] = useState<TwoFactorStatus | null>(null)
+  const [statusError, setStatusError] = useState('')
+  const [notice, setNotice] = useState('')
+
+  const [setup, setSetup] = useState<TwoFactorSetupResponse | null>(null)
+  const [setupLoading, setSetupLoading] = useState(false)
+  const [setupError, setSetupError] = useState('')
+  const [code, setCode] = useState('')
+  const [enableLoading, setEnableLoading] = useState(false)
+  const [enableError, setEnableError] = useState('')
+  const [backupCodes, setBackupCodes] = useState<string[] | null>(null)
+
+  const [disabling, setDisabling] = useState(false)
+  const [currentPassword, setCurrentPassword] = useState('')
+  const [disableCode, setDisableCode] = useState('')
+  const [disableError, setDisableError] = useState('')
+  const [disableLoading, setDisableLoading] = useState(false)
+
+  useEffect(() => {
+    let alive = true
+    api
+      .twoFactorStatus()
+      .then((data) => {
+        if (alive) setStatus(data)
+      })
+      .catch((err: unknown) => {
+        if (alive) {
+          setStatusError(
+            err instanceof Error ? err.message : 'Não foi possível ler o estado do 2FA.',
+          )
+        }
+      })
+    return () => {
+      alive = false
+    }
+  }, [])
+
+  async function loadStatus() {
+    try {
+      const data = await api.twoFactorStatus()
+      setStatus(data)
+      setStatusError('')
+    } catch (err) {
+      setStatusError(err instanceof Error ? err.message : 'Não foi possível ler o estado do 2FA.')
+    }
+  }
+
+  async function handleStartSetup() {
+    setSetupError('')
+    setNotice('')
+    setSetupLoading(true)
+    try {
+      setSetup(await api.twoFactorSetup())
+      setCode('')
+      setEnableError('')
+    } catch (err) {
+      setSetupError(err instanceof Error ? err.message : 'Não foi possível iniciar a configuração.')
+    } finally {
+      setSetupLoading(false)
+    }
+  }
+
+  function cancelSetup() {
+    setSetup(null)
+    setCode('')
+    setEnableError('')
+  }
+
+  async function handleEnable(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setEnableError('')
+
+    if (!code.trim()) {
+      setEnableError('Informe o código de 6 dígitos.')
+      return
+    }
+
+    setEnableLoading(true)
+    try {
+      const response = await api.twoFactorEnable(code.trim())
+      setBackupCodes(response.backup_codes)
+      setStatus({ enabled: true, backup_codes_remaining: response.backup_codes.length })
+      setSetup(null)
+      setCode('')
+      setNotice('2FA ativado. Guarde os códigos de backup.')
+      await loadStatus()
+    } catch (err) {
+      setEnableError(err instanceof Error ? err.message : 'Não foi possível ativar o 2FA.')
+    } finally {
+      setEnableLoading(false)
+    }
+  }
+
+  async function handleDisable(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setDisableError('')
+
+    if (!currentPassword) {
+      setDisableError('Informe a senha atual.')
+      return
+    }
+    if (!disableCode.trim()) {
+      setDisableError('Informe o código do autenticador ou um código de backup.')
+      return
+    }
+
+    setDisableLoading(true)
+    try {
+      await api.twoFactorDisable(currentPassword, disableCode.trim())
+      setDisabling(false)
+      setCurrentPassword('')
+      setDisableCode('')
+      setBackupCodes(null)
+      setStatus({ enabled: false, backup_codes_remaining: 0 })
+      setNotice('2FA desativado.')
+      await loadStatus()
+    } catch (err) {
+      setDisableError(err instanceof Error ? err.message : 'Não foi possível desativar o 2FA.')
+    } finally {
+      setDisableLoading(false)
+    }
+  }
+
+  return (
+    <Section
+      title="Autenticação em dois fatores"
+      description="Código de 6 dígitos de um aplicativo como Google Authenticator ou 1Password."
+      icon={<ShieldCheck className="h-4 w-4" />}
+    >
+      {statusError ? <ErrorBanner message={statusError} /> : null}
+      {notice ? <Notice message={notice} /> : null}
+      {backupCodes ? (
+        <BackupCodes codes={backupCodes} onDismiss={() => setBackupCodes(null)} />
+      ) : null}
+      {!status && !statusError ? (
+        <p className="text-[12px] text-muted">Lendo estado...</p>
+      ) : null}
+
+      {status && !status.enabled ? (
+        setup ? (
+          <form className="space-y-2.5" onSubmit={handleEnable}>
+            <div className="flex flex-col gap-2.5 sm:flex-row">
+              <img
+                src={setup.qr_data_url}
+                alt="QR code para configurar o aplicativo autenticador"
+                className="h-36 w-36 shrink-0 self-center rounded-xl border border-line bg-white p-1.5 sm:self-start"
+              />
+              <div className="min-w-0 flex-1 space-y-2">
+                <p className="text-[11px] leading-4 text-muted">
+                  Escaneie o QR code ou informe a chave manualmente no aplicativo.
+                </p>
+                <SecretCopy secret={setup.secret} />
+              </div>
+            </div>
+            <Field
+              label="Código de 6 dígitos"
+              value={code}
+              onChange={setCode}
+              autoComplete="one-time-code"
+              placeholder="123456"
+            />
+            {enableError ? <ErrorBanner message={enableError} /> : null}
+            <div className="flex flex-wrap gap-2">
+              <Button type="submit" size="sm" fullWidth={false} loading={enableLoading}>
+                Confirmar e ativar
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                fullWidth={false}
+                variant="secondary"
+                onClick={cancelSetup}
+                disabled={enableLoading}
+              >
+                Cancelar
+              </Button>
+            </div>
+          </form>
+        ) : (
+          <div className="space-y-2">
+            <p className="text-[11px] leading-4 text-muted">
+              Desativada. Ative para exigir um código além da senha a cada login.
+            </p>
+            {setupError ? <ErrorBanner message={setupError} /> : null}
+            <Button
+              type="button"
+              size="sm"
+              fullWidth={false}
+              loading={setupLoading}
+              onClick={handleStartSetup}
+            >
+              Ativar 2FA
+            </Button>
+          </div>
+        )
+      ) : null}
+
+      {status && status.enabled ? (
+        <div className="space-y-2.5">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium leading-3 text-emerald-300">
+              Ativada
+            </span>
+            <span className="text-[11px] text-muted">
+              Códigos de backup restantes: {status.backup_codes_remaining}
+            </span>
+          </div>
+
+          {disabling ? (
+            <form className="space-y-2.5" onSubmit={handleDisable}>
+              <Field
+                label="Senha atual"
+                type="password"
+                value={currentPassword}
+                onChange={setCurrentPassword}
+                autoComplete="current-password"
+                placeholder="confirme com sua senha"
+              />
+              <Field
+                label="Código do autenticador ou backup"
+                value={disableCode}
+                onChange={setDisableCode}
+                autoComplete="one-time-code"
+                placeholder="123456 ou código de backup"
+              />
+              {disableError ? <ErrorBanner message={disableError} /> : null}
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="submit"
+                  size="sm"
+                  fullWidth={false}
+                  variant="secondary"
+                  loading={disableLoading}
+                >
+                  Desativar 2FA
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  fullWidth={false}
+                  variant="secondary"
+                  onClick={() => {
+                    setDisabling(false)
+                    setCurrentPassword('')
+                    setDisableCode('')
+                    setDisableError('')
+                  }}
+                  disabled={disableLoading}
+                >
+                  Cancelar
+                </Button>
+              </div>
+            </form>
+          ) : (
+            <Button
+              type="button"
+              size="sm"
+              fullWidth={false}
+              variant="secondary"
+              onClick={() => setDisabling(true)}
+            >
+              Desativar 2FA
+            </Button>
+          )}
+        </div>
+      ) : null}
+    </Section>
+  )
+}
+
+function SecretCopy({ secret }: { secret: string }) {
+  const [copied, setCopied] = useState(false)
+
+  useEffect(() => {
+    if (!copied) return
+    const timer = window.setTimeout(() => setCopied(false), 2000)
+    return () => window.clearTimeout(timer)
+  }, [copied])
+
+  async function handleCopy() {
+    const ok = await copyToClipboard(secret)
+    setCopied(ok)
+  }
+
+  return (
+    <div className="flex items-center gap-2 rounded-xl border border-line bg-ink px-3 py-2">
+      <code className="min-w-0 flex-1 select-all break-all font-mono text-[11px] text-paper">
+        {secret}
+      </code>
+      <button
+        type="button"
+        onClick={handleCopy}
+        aria-label={copied ? 'Chave copiada' : 'Copiar chave'}
+        title={copied ? 'Chave copiada' : 'Copiar chave'}
+        className={`inline-flex items-center gap-1.5 rounded-lg border px-2 py-1 text-[11px] font-medium transition-colors ${
+          copied
+            ? 'border-emerald-500/30 text-emerald-300'
+            : 'border-line bg-ink/60 text-paper hover:border-white/25'
+        }`}
       >
-        <p className="text-[11px] leading-4 text-muted">
-          Nada para ativar nesta versão. Quando existirem, esses métodos aparecerão aqui com
-          estado real — sem opções simuladas.
+        {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+        {copied ? 'Copiado' : 'Copiar'}
+      </button>
+    </div>
+  )
+}
+
+type BackupCodesProps = {
+  codes: string[]
+  onDismiss: () => void
+}
+
+function BackupCodes({ codes, onDismiss }: BackupCodesProps) {
+  const [copied, setCopied] = useState(false)
+  const [failed, setFailed] = useState(false)
+
+  useEffect(() => {
+    if (!copied) return
+    const timer = window.setTimeout(() => setCopied(false), 2000)
+    return () => window.clearTimeout(timer)
+  }, [copied])
+
+  async function handleCopyAll() {
+    setFailed(false)
+    const ok = await copyToClipboard(codes.join('\n'))
+    setCopied(ok)
+    setFailed(!ok)
+  }
+
+  function handleDownload() {
+    const content = [
+      'Interpres — códigos de backup de autenticação em dois fatores',
+      '',
+      ...codes,
+      '',
+      'Cada código funciona uma única vez.',
+      'Guarde este arquivo em um lugar seguro.',
+      '',
+    ].join('\n')
+    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = 'interpres-codigos-backup.txt'
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    URL.revokeObjectURL(url)
+  }
+
+  return (
+    <div className="rounded-xl border border-emerald-500/25 bg-emerald-500/10 p-3.5">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-emerald-300">
+          Códigos de backup
         </p>
-      </Section>
+        <div className="flex items-center gap-1.5">
+          <button
+            type="button"
+            onClick={handleDownload}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-ink/60 px-2 py-1 text-[11px] font-medium text-paper transition-colors hover:border-white/25"
+          >
+            <Download className="h-3.5 w-3.5" />
+            Baixar .txt
+          </button>
+          <button
+            type="button"
+            onClick={handleCopyAll}
+            aria-label={copied ? 'Códigos copiados' : 'Copiar todos os códigos'}
+            className={`inline-flex items-center gap-1.5 rounded-lg border px-2 py-1 text-[11px] font-medium transition-colors ${
+              copied
+                ? 'border-emerald-500/30 text-emerald-300'
+                : 'border-line bg-ink/60 text-paper hover:border-white/25'
+            }`}
+          >
+            {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+            {copied ? 'Copiados' : 'Copiar todos'}
+          </button>
+        </div>
+      </div>
+
+      <ul className="mt-2 grid grid-cols-2 gap-1.5 font-mono text-[12px] text-paper">
+        {codes.map((item) => (
+          <li
+            key={item}
+            className="select-all rounded-lg border border-line bg-ink/60 px-2 py-1.5 text-center tracking-[0.08em]"
+          >
+            {item}
+          </li>
+        ))}
+      </ul>
+
+      <p className="mt-2 text-[11px] leading-4 text-emerald-200/90">
+        Guarde agora. Cada código funciona uma única vez e não será mostrado de novo.
+      </p>
+      {failed ? (
+        <p className="mt-1 text-[11px] leading-4 text-red-300">
+          Não foi possível copiar automaticamente. Selecione os códigos manualmente.
+        </p>
+      ) : null}
+      <button
+        type="button"
+        onClick={onDismiss}
+        className="mt-2 text-[11px] font-medium text-emerald-200 underline-offset-2 transition-colors hover:text-emerald-100 hover:underline"
+      >
+        Já salvei
+      </button>
     </div>
   )
 }

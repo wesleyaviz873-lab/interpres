@@ -39,6 +39,10 @@ def reset_password(
 
     user.password_hash = hash_password(new_password)
     code = set_recovery_code(user)
+    # A lost authenticator must not lock the owner out after an admin reset.
+    user.totp_enabled = False
+    user.totp_secret = None
+    user.totp_backup_codes = None
     db.execute(delete(AuthSession).where(AuthSession.user_id == user.id))
     db.commit()
     db.refresh(user)

@@ -43,3 +43,15 @@ def new_recovery_code() -> str:
 
 def normalize_recovery_code(code: str) -> str:
     return "".join(ch for ch in code.upper() if ch.isalnum())
+
+
+def new_backup_code() -> str:
+    groups = [
+        "".join(secrets.choice(_RECOVERY_ALPHABET) for _ in range(4))
+        for _ in range(2)
+    ]
+    return "-".join(groups)
+
+
+def normalize_backup_code(code: str) -> str:
+    return "".join(ch for ch in code.upper() if ch.isalnum())

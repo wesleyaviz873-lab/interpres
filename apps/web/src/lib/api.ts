@@ -11,14 +11,43 @@ export type AuthResponse = {
 
 export type SetupResponse = AuthResponse & {
   recovery_code: string
+  email_recovery: boolean
 }
+
+export type LoginResult =
+  | AuthResponse
+  | { requires_2fa: true; challenge_token: string }
 
 export type MeResponse = AuthResponse & {
   has_recovery_code: boolean
+  two_factor_enabled: boolean
 }
 
 export type RecoverResponse = AuthResponse & {
   recovery_code: string
+}
+
+export type ResetPasswordResponse = RecoverResponse
+
+export type RecoveryMethods = {
+  email: boolean
+  recovery_code: true
+  admin_cli: true
+}
+
+export type TwoFactorStatus = {
+  enabled: boolean
+  backup_codes_remaining: number
+}
+
+export type TwoFactorSetupResponse = {
+  secret: string
+  otpauth_uri: string
+  qr_data_url: string
+}
+
+export type TwoFactorEnableResponse = {
+  backup_codes: string[]
 }
 
 export type SessionInfo = {
@@ -97,15 +126,68 @@ export const api = {
     })
   },
 
-  login(email: string, password: string): Promise<AuthResponse> {
-    return request<AuthResponse>('/api/auth/login', {
+  login(email: string, password: string): Promise<LoginResult> {
+    return request<LoginResult>('/api/auth/login', {
       method: 'POST',
       body: JSON.stringify({ email, password }),
     })
   },
 
+  login2fa(challengeToken: string, code: string): Promise<AuthResponse> {
+    return request<AuthResponse>('/api/auth/login/2fa', {
+      method: 'POST',
+      body: JSON.stringify({ challenge_token: challengeToken, code }),
+    })
+  },
+
   me(): Promise<MeResponse> {
     return request<MeResponse>('/api/auth/me')
+  },
+
+  recoveryMethods(): Promise<RecoveryMethods> {
+    return request<RecoveryMethods>('/api/auth/recovery-methods')
+  },
+
+  forgotPassword(email: string): Promise<OkResponse> {
+    return request<OkResponse>('/api/auth/forgot-password', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    })
+  },
+
+  resetPassword(
+    email: string,
+    code: string,
+    newPassword: string,
+  ): Promise<ResetPasswordResponse> {
+    return request<ResetPasswordResponse>('/api/auth/reset-password', {
+      method: 'POST',
+      body: JSON.stringify({ email, code, new_password: newPassword }),
+    })
+  },
+
+  twoFactorStatus(): Promise<TwoFactorStatus> {
+    return request<TwoFactorStatus>('/api/auth/2fa/status')
+  },
+
+  twoFactorSetup(): Promise<TwoFactorSetupResponse> {
+    return request<TwoFactorSetupResponse>('/api/auth/2fa/setup', {
+      method: 'POST',
+    })
+  },
+
+  twoFactorEnable(code: string): Promise<TwoFactorEnableResponse> {
+    return request<TwoFactorEnableResponse>('/api/auth/2fa/enable', {
+      method: 'POST',
+      body: JSON.stringify({ code }),
+    })
+  },
+
+  twoFactorDisable(currentPassword: string, code: string): Promise<OkResponse> {
+    return request<OkResponse>('/api/auth/2fa/disable', {
+      method: 'POST',
+      body: JSON.stringify({ current_password: currentPassword, code }),
+    })
   },
 
   logout(): Promise<OkResponse> {
