@@ -35,6 +35,7 @@ class Settings(BaseSettings):
     smtp_password: str = ""
     smtp_from: str = ""
     smtp_security: str = "starttls"  # starttls | ssl | none
+    ollama_base_url: str = "http://localhost:11434"
 
     @property
     def is_production(self) -> bool:

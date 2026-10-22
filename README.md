@@ -23,6 +23,12 @@ owner account, like a self-hosted n8n. There is no public signup.
 - Admin CLI: `list-users` and `reset-password` for the server owner.
 - Account settings: change e-mail, change password, rotate the recovery code and
   log out of every device.
+- Encrypted provider key storage for OpenAI, Anthropic, Google, OpenRouter,
+  OpenCode and Ollama, with local Ollama model discovery.
+- Settings sections for API keys, voice preferences, detected coding agents,
+  project memory (future), backend health, appearance, notifications and about.
+- A real app shell with sidebar, chat area and composer. The chat engine and
+  persistent jobs are the next block.
 - CSRF protection on state-changing requests.
 - Argon2id password hashing.
 - Login and recovery rate limiting.
@@ -49,9 +55,8 @@ docker compose up -d
 ```
 
 Open <http://localhost:3000>. The first visit asks you to create the owner
-account and shows a **one-time recovery code**. You can enter without saving it,
-but it is the fallback when e-mail recovery is not configured. There is no
-public signup.
+account and goes straight to the app. The recovery code is **optional and
+configured later** in **Configurações → Segurança**; there is no public signup.
 
 For the simpler "forgot password" by e-mail, fill the `SMTP_*` variables in
 `.env` before starting. The login page then offers a 6-digit code sent to the

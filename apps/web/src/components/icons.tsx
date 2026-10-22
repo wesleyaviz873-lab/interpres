@@ -210,3 +210,97 @@ export function Folder({ className }: IconProps) {
     </IconShell>
   )
 }
+
+export function ChevronDown({ className }: IconProps) {
+  return (
+    <IconShell className={className}>
+      <path d="m6 9 6 6 6-6" />
+    </IconShell>
+  )
+}
+
+export function Globe({ className }: IconProps) {
+  return (
+    <IconShell className={className}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M3.5 9h17M3.5 15h17" />
+      <path d="M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18" />
+    </IconShell>
+  )
+}
+
+export function Bell({ className }: IconProps) {
+  return (
+    <IconShell className={className}>
+      <path d="M18 9a6 6 0 1 0-12 0c0 5-2 6-2 6h16s-2-1-2-6" />
+      <path d="M10.5 20a2 2 0 0 0 3 0" />
+    </IconShell>
+  )
+}
+
+export function Sliders({ className }: IconProps) {
+  return (
+    <IconShell className={className}>
+      <path d="M4 7h8M16 7h4M4 12h4M12 12h8M4 17h10M18 17h2" />
+      <circle cx="14" cy="7" r="2" />
+      <circle cx="10" cy="12" r="2" />
+      <circle cx="16" cy="17" r="2" />
+    </IconShell>
+  )
+}
+
+export function Terminal({ className }: IconProps) {
+  return (
+    <IconShell className={className}>
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <path d="m7 9 3 3-3 3M12.5 15H17" />
+    </IconShell>
+  )
+}
+
+export function Mic({ className }: IconProps) {
+  return (
+    <IconShell className={className}>
+      <rect x="9" y="3" width="6" height="11" rx="3" />
+      <path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v3M9 21h6" />
+    </IconShell>
+  )
+}
+
+export function Cpu({ className }: IconProps) {
+  return (
+    <IconShell className={className}>
+      <rect x="6" y="6" width="12" height="12" rx="2" />
+      <rect x="9.5" y="9.5" width="5" height="5" rx="1" />
+      <path d="M9 2.5v3M15 2.5v3M9 18.5v3M15 18.5v3M2.5 9h3M2.5 15h3M18.5 9h3M18.5 15h3" />
+    </IconShell>
+  )
+}
+
+export function Database({ className }: IconProps) {
+  return (
+    <IconShell className={className}>
+      <ellipse cx="12" cy="5.5" rx="7.5" ry="3" />
+      <path d="M4.5 5.5v13c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3v-13" />
+      <path d="M4.5 12c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3" />
+    </IconShell>
+  )
+}
+
+export function Info({ className }: IconProps) {
+  return (
+    <IconShell className={className}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 11v5M12 7.5h.01" />
+    </IconShell>
+  )
+}
+
+export function Send({ className }: IconProps) {
+  return (
+    <IconShell className={className}>
+      <path d="m4 12 16-8-5.5 16L12 14l-8-2Z" />
+      <path d="M12 14 20 4" />
+    </IconShell>
+  )
+}

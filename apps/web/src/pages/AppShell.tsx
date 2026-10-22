@@ -1,17 +1,20 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { Button } from '../components/Button'
-import { SettingsModal } from '../components/SettingsModal'
+import { SettingsModal, type SettingsSection } from '../components/SettingsModal'
 import { Toast, useToast } from '../components/Toast'
 import {
   Chat,
   Folder,
+  Key,
   Logout,
   Menu,
+  Send,
   Settings,
   User as UserIcon,
   X,
 } from '../components/icons'
-import type { User } from '../lib/api'
+import { api, type User } from '../lib/api'
+import { applyAppearance, loadAppearance } from '../lib/preferences'
 
 type AppShellProps = {
   user: User
@@ -117,9 +120,26 @@ function SidebarContent({
 export function AppShell({ user, onUserChange, onLogout, onSessionEnded }: AppShellProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [settingsSection, setSettingsSection] = useState<SettingsSection>('conta')
+  const [hasProvider, setHasProvider] = useState(false)
+  const [draft, setDraft] = useState('')
   const { toast, showToast } = useToast()
 
   const closeSettings = useCallback(() => setSettingsOpen(false), [])
+
+  const refreshProviders = useCallback(async () => {
+    try {
+      const data = await api.providers()
+      setHasProvider(data.providers.some((provider) => provider.configured))
+    } catch {
+      setHasProvider(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    applyAppearance(loadAppearance())
+    void refreshProviders()
+  }, [refreshProviders])
 
   useEffect(() => {
     if (!sidebarOpen) return
@@ -131,12 +151,28 @@ export function AppShell({ user, onUserChange, onLogout, onSessionEnded }: AppSh
   }, [sidebarOpen])
 
   function handleNewConversation() {
+    setSidebarOpen(false)
+    setDraft('')
     showToast('As conversas chegam no próximo bloco do Interpres.')
   }
 
-  function openSettings() {
+  function openSettings(section: SettingsSection = 'conta') {
     setSidebarOpen(false)
+    setSettingsSection(section)
     setSettingsOpen(true)
+  }
+
+  function handleSend(event?: FormEvent<HTMLFormElement>) {
+    event?.preventDefault()
+    if (!draft.trim()) return
+
+    setDraft('')
+    if (!hasProvider) {
+      openSettings('chaves')
+      showToast('Configure uma chave de API para usar o chat.', 'error')
+      return
+    }
+    showToast('O motor de chat será ativado no próximo bloco.')
   }
 
   function handleLogout() {
@@ -145,12 +181,12 @@ export function AppShell({ user, onUserChange, onLogout, onSessionEnded }: AppSh
   }
 
   return (
-    <div className="flex min-h-dvh bg-ink">
-      <aside className="sticky top-0 hidden h-dvh w-64 shrink-0 flex-col border-r border-line bg-panel/60 lg:flex">
+    <div className="flex h-dvh overflow-hidden bg-ink">
+      <aside className="hidden h-dvh w-64 shrink-0 flex-col border-r border-line bg-panel/60 lg:flex">
         <SidebarContent
           user={user}
           onNewConversation={handleNewConversation}
-          onOpenSettings={openSettings}
+          onOpenSettings={() => openSettings('conta')}
           onLogout={handleLogout}
         />
       </aside>
@@ -170,7 +206,7 @@ export function AppShell({ user, onUserChange, onLogout, onSessionEnded }: AppSh
             <SidebarContent
               user={user}
               onNewConversation={handleNewConversation}
-              onOpenSettings={openSettings}
+              onOpenSettings={() => openSettings('conta')}
               onLogout={handleLogout}
               onClose={() => setSidebarOpen(false)}
             />
@@ -178,7 +214,7 @@ export function AppShell({ user, onUserChange, onLogout, onSessionEnded }: AppSh
         </div>
       ) : null}
 
-      <div className="flex min-h-dvh min-w-0 flex-1 flex-col">
+      <div className="flex min-w-0 flex-1 flex-col">
         <header className="flex h-14 shrink-0 items-center gap-2 border-b border-line px-4">
           <button
             type="button"
@@ -192,7 +228,7 @@ export function AppShell({ user, onUserChange, onLogout, onSessionEnded }: AppSh
           </button>
 
           <div className="flex items-center gap-2">
-            <span className="text-[13px] font-semibold text-paper">Conversas</span>
+            <span className="text-[13px] font-semibold text-paper">Nova conversa</span>
             <span className="rounded-full border border-line px-1.5 py-0.5 text-[9px] leading-3 text-muted">
               0
             </span>
@@ -204,7 +240,7 @@ export function AppShell({ user, onUserChange, onLogout, onSessionEnded }: AppSh
             </span>
             <button
               type="button"
-              onClick={openSettings}
+              onClick={() => openSettings('conta')}
               className="inline-flex items-center gap-1.5 rounded-lg border border-line px-2.5 py-1.5 text-[11px] font-medium text-muted transition-colors hover:border-white/25 hover:text-paper"
             >
               <Settings className="h-3.5 w-3.5" />
@@ -213,46 +249,99 @@ export function AppShell({ user, onUserChange, onLogout, onSessionEnded }: AppSh
           </div>
         </header>
 
-        <main className="flex flex-1 items-center justify-center px-5 py-8">
-          <section className="w-full max-w-lg rounded-2xl border border-line bg-panel p-5 sm:p-6">
-            <div className="flex items-start gap-3.5">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-accent/25 bg-accent/10 text-accent">
-                <Chat className="h-5 w-5" />
+        <main className="flex min-h-0 flex-1 flex-col">
+          <div className="min-h-0 flex-1 overflow-y-auto px-4 py-6">
+            <div className="mx-auto flex w-full max-w-3xl flex-col gap-3.5">
+              <div className="flex items-start gap-3">
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-accent/25 bg-accent/10 text-accent">
+                  <Chat className="h-4 w-4" />
+                </div>
+                <div className="min-w-0 max-w-[min(560px,85%)] rounded-2xl rounded-tl-md border border-line bg-panel px-3.5 py-2.5">
+                  <p className="text-[10px] font-medium uppercase tracking-[0.12em] text-muted">
+                    Interpres
+                  </p>
+                  <p className="mt-1 text-[12.5px] leading-5 text-paper/90">
+                    {hasProvider
+                      ? 'Tudo pronto. O motor de chat e os jobs entram no próximo bloco.'
+                      : 'Olá! Configure uma chave de API em Configurações para começar.'}
+                  </p>
+                </div>
               </div>
-              <div className="min-w-0">
-                <h1 className="text-[15px] font-semibold text-paper">Nenhuma conversa ainda</h1>
-                <p className="mt-1 text-[12px] leading-5 text-muted">
-                  O chat e os jobs persistentes chegam no próximo bloco. Sua conta, a sessão
-                  segura e a recuperação de acesso já estão funcionando.
-                </p>
-              </div>
-            </div>
 
-            <div className="mt-4 flex flex-wrap items-center gap-2">
-              <Button
-                type="button"
-                size="sm"
-                fullWidth={false}
-                variant="secondary"
-                onClick={openSettings}
-              >
-                <Settings className="h-3.5 w-3.5" />
-                Abrir configurações
-              </Button>
-              <span className="rounded-full border border-line px-2 py-1 text-[10px] leading-3 text-muted">
-                v0.1.0
-              </span>
+              {!hasProvider ? (
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border border-line bg-panel px-3.5 py-2.5">
+                  <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-accent/10 text-accent">
+                    <Key className="h-3.5 w-3.5" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[12px] font-medium leading-4 text-paper">
+                      Nenhum provedor configurado
+                    </p>
+                    <p className="text-[11px] leading-4 text-muted">
+                      Conecte OpenAI, Anthropic, Google, OpenRouter, OpenCode ou Ollama.
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    size="sm"
+                    fullWidth={false}
+                    variant="secondary"
+                    onClick={() => openSettings('chaves')}
+                  >
+                    Configurar chave de API
+                  </Button>
+                </div>
+              ) : null}
             </div>
-          </section>
+          </div>
+
+          <div className="shrink-0 border-t border-line px-4 py-3">
+            <form className="mx-auto w-full max-w-3xl" onSubmit={handleSend}>
+              <div className="flex items-end gap-2 rounded-2xl border border-line bg-panel px-2.5 py-2 transition-colors focus-within:border-white/20">
+                <textarea
+                  value={draft}
+                  onChange={(event) => setDraft(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' && !event.shiftKey) {
+                      event.preventDefault()
+                      handleSend()
+                    }
+                  }}
+                  rows={1}
+                  placeholder="Escreva uma mensagem..."
+                  aria-label="Mensagem"
+                  className="max-h-32 min-h-[26px] flex-1 resize-none bg-transparent px-1.5 py-1 text-[13px] leading-5 text-paper placeholder:text-muted/60 focus:outline-none"
+                />
+                <button
+                  type="submit"
+                  disabled={!draft.trim()}
+                  aria-label="Enviar mensagem"
+                  title="Enviar mensagem"
+                  className="mb-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-accent text-black transition-colors hover:bg-orange-400 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <Send className="h-4 w-4" />
+                </button>
+              </div>
+              <p className="mt-1.5 px-1 text-[10.5px] leading-4 text-muted">
+                {hasProvider
+                  ? 'O motor de chat será ativado no próximo bloco.'
+                  : 'Configure uma chave de API para habilitar o chat.'}
+              </p>
+            </form>
+          </div>
         </main>
       </div>
 
       {settingsOpen ? (
         <SettingsModal
           user={user}
+          initialSection={settingsSection}
           onClose={closeSettings}
           onUserChange={onUserChange}
           onSessionEnded={onSessionEnded}
+          onProvidersChanged={() => {
+            void refreshProviders()
+          }}
         />
       ) : null}
 

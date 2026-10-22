@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
@@ -19,7 +19,14 @@ def test_forgot_password_sends_code_and_reset_logs_in(
 ) -> None:
     setup = client.post("/api/setup", json=OWNER)
     assert setup.status_code == 201
-    old_recovery = setup.json()["recovery_code"]
+    csrf = setup.json()["csrf_token"]
+    generated = client.post(
+        "/api/auth/recovery-code",
+        headers={"X-CSRF-Token": csrf},
+        json={"current_password": OWNER["password"]},
+    )
+    assert generated.status_code == 200
+    old_recovery = generated.json()["recovery_code"]
 
     captured: dict[str, str] = {}
 
@@ -97,3 +104,4 @@ def test_reset_password_rejects_wrong_code(client: TestClient, monkeypatch) -> N
         },
     )
     assert response.status_code == 401
+

@@ -4,6 +4,7 @@
 
 :root {
   color-scheme: dark;
+  --interpres-accent: #f97316;
 }
 
 html,
@@ -27,6 +28,25 @@ body {
 }
 
 *:focus-visible {
-  outline: 2px solid #f97316;
+  outline: 2px solid var(--interpres-accent, #f97316);
   outline-offset: 2px;
+}
+
+.text-accent {
+  color: var(--interpres-accent, #f97316);
+}
+
+.bg-accent {
+  background-color: var(--interpres-accent, #f97316);
+}
+
+.border-accent {
+  border-color: var(--interpres-accent, #f97316);
+}
+
+html[data-animations='off'] *,
+html[data-animations='off'] *::before,
+html[data-animations='off'] *::after {
+  animation: none !important;
+  transition: none !important;
 }

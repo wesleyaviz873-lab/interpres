@@ -188,7 +188,6 @@ def setup(
 
     email = normalize_email(str(body.email))
     user = User(email=email, password_hash=hash_password(body.password))
-    recovery_code = set_recovery_code(user)
     db.add(user)
     db.commit()
     db.refresh(user)
@@ -199,7 +198,6 @@ def setup(
     return {
         "user": _user_response(user),
         "csrf_token": auth_session.csrf_token,
-        "recovery_code": recovery_code,
         "email_recovery": settings.smtp_configured,
     }
 

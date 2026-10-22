@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import re
 
@@ -21,6 +21,20 @@ def _login(client: TestClient, email: str = OWNER["email"], password: str = OWNE
     return response.json()
 
 
+def _generate_recovery_code(
+    client: TestClient,
+    csrf: str,
+    password: str = OWNER["password"],
+) -> str:
+    response = client.post(
+        "/api/auth/recovery-code",
+        headers={"X-CSRF-Token": csrf},
+        json={"current_password": password},
+    )
+    assert response.status_code == 200, response.text
+    return response.json()["recovery_code"]
+
+
 def _cookie(client: TestClient) -> str:
     cookie = client.cookies.get("interpres_session")
     assert cookie
@@ -39,17 +53,21 @@ def test_setup_status_is_true_on_empty_install(client: TestClient) -> None:
     assert response.json() == {"needs_setup": True}
 
 
-def test_setup_creates_owner_recovery_code_and_session(client: TestClient) -> None:
+def test_setup_creates_owner_and_session_without_recovery_code(client: TestClient) -> None:
     data = _setup(client)
     assert data["user"]["email"] == "owner@example.com"
     assert len(data["csrf_token"]) > 20
-    assert RECOVERY_PATTERN.match(data["recovery_code"])
+    assert "recovery_code" not in data
     assert client.cookies.get("interpres_session")
 
     me = client.get("/api/auth/me")
     assert me.status_code == 200
     assert me.json()["user"]["email"] == "owner@example.com"
-    assert me.json()["has_recovery_code"] is True
+    assert me.json()["has_recovery_code"] is False
+
+    code = _generate_recovery_code(client, data["csrf_token"])
+    assert RECOVERY_PATTERN.match(code)
+    assert client.get("/api/auth/me").json()["has_recovery_code"] is True
 
 
 def test_setup_normalizes_email(client: TestClient) -> None:
@@ -106,7 +124,7 @@ def test_login_and_logout_flow(client: TestClient) -> None:
 
 def test_recovery_rotates_code_and_invalidates_old_sessions(client: TestClient) -> None:
     setup = _setup(client)
-    old_code = setup["recovery_code"]
+    old_code = _generate_recovery_code(client, setup["csrf_token"])
     old_cookie = _cookie(client)
 
     client.cookies.clear()
@@ -201,7 +219,7 @@ def test_change_email(client: TestClient) -> None:
 
 def test_rotate_recovery_code_invalidates_previous_code(client: TestClient) -> None:
     setup = _setup(client)
-    old_code = setup["recovery_code"]
+    old_code = _generate_recovery_code(client, setup["csrf_token"])
 
     rotated = client.post(
         "/api/auth/recovery-code",
@@ -272,3 +290,5 @@ def test_security_headers(client: TestClient) -> None:
     assert response.headers["x-content-type-options"] == "nosniff"
     assert response.headers["x-frame-options"] == "DENY"
     assert "content-security-policy" in response.headers
+
+

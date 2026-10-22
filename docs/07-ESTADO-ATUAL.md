@@ -30,6 +30,17 @@ Atualizado em 2026-10-22.
   `APP_SECRET`, códigos de backup de uso único e desafio de login separado.
 - CLI administrativo: `list-users` e `reset-password` (também desativa 2FA ao
   redefinir, para não trancar o dono fora).
+- Chaves de provedores cifradas com `APP_SECRET`; a API nunca devolve a chave
+  salva, só o estado "configurada".
+- Detecção local do Ollama e listagem dos modelos instalados.
+- Detecção somente leitura dos agentes de código instalados no host.
+- Preferências de aparência, voz e notificações no navegador; a aparência
+  aplica tamanho de fonte e cor de destaque.
+- Configurações completas: Conta, Segurança, Chaves de API, Voz, Harnesses,
+  Memória do Projeto, Backend / Endpoint, Aparência, Notificações e Sobre.
+  Sem Dev Mode.
+- Setup em uma etapa: cria a conta e entra direto na janela; o código de
+  recuperação é configurado depois, em Segurança.
 - Sessão com token opaco; o banco guarda apenas o hash SHA-256.
 - Cookie `HttpOnly`, `SameSite=Lax`, `Secure` quando a URL é HTTPS.
 - CSRF obrigatório em `POST/PUT/PATCH/DELETE` autenticados.
@@ -68,7 +79,7 @@ Atualizado em 2026-10-22.
 
 ### Verificação
 
-- `pytest`: 28 testes passando.
+- `pytest`: 32 testes passando.
 - `npm run build`: TypeScript e Vite passando.
 - Imagem Docker construída e container testado com:
   - criação do dono;
@@ -79,7 +90,7 @@ Atualizado em 2026-10-22.
 
 ## O que ainda não existe
 
-- Chat, conversas e provedores.
+- Chat, conversas e o motor que usa as chaves já armazenadas.
 - Jobs persistentes e reconexão.
 - Workspace e ferramentas.
 - Criptografia de chaves de API.

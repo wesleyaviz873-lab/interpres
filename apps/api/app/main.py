@@ -11,7 +11,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .config import settings
 from .database import Base, engine
-from .routes import auth, health
+from .routes import agents, auth, health, providers
 
 
 @asynccontextmanager
@@ -56,6 +56,8 @@ async def security_headers(request, call_next):
 
 app.include_router(health.router)
 app.include_router(auth.router)
+app.include_router(providers.router)
+app.include_router(agents.router)
 
 
 _web_dist = Path(settings.web_dist_dir)

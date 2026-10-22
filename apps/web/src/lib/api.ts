@@ -10,7 +10,6 @@ export type AuthResponse = {
 }
 
 export type SetupResponse = AuthResponse & {
-  recovery_code: string
   email_recovery: boolean
 }
 
@@ -72,6 +71,43 @@ export type OkResponse = {
 
 export type SetupStatus = {
   needs_setup: boolean
+}
+
+export type ProviderInfo = {
+  id: string
+  label: string
+  placeholder: string
+  configured: boolean
+  hint: string
+}
+
+export type ProvidersResponse = {
+  providers: ProviderInfo[]
+}
+
+export type OllamaModelsResponse = {
+  reachable: boolean
+  base_url: string
+  models: string[]
+  error?: string
+}
+
+export type AgentInfo = {
+  id: string
+  name: string
+  command: string
+  color: string
+  installed: boolean
+}
+
+export type AgentsResponse = {
+  agents: AgentInfo[]
+}
+
+export type HealthResponse = {
+  status: string
+  service: string
+  version: string
 }
 
 export class ApiError extends Error {
@@ -238,5 +274,34 @@ export const api = {
 
   session(): Promise<SessionInfo> {
     return request<SessionInfo>('/api/auth/session')
+  },
+
+  providers(): Promise<ProvidersResponse> {
+    return request<ProvidersResponse>('/api/providers')
+  },
+
+  saveProvider(id: string, value: string): Promise<OkResponse> {
+    return request<OkResponse>(`/api/providers/${encodeURIComponent(id)}`, {
+      method: 'PUT',
+      body: JSON.stringify({ value }),
+    })
+  },
+
+  deleteProvider(id: string): Promise<OkResponse> {
+    return request<OkResponse>(`/api/providers/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+    })
+  },
+
+  ollamaModels(): Promise<OllamaModelsResponse> {
+    return request<OllamaModelsResponse>('/api/providers/ollama/models')
+  },
+
+  agents(): Promise<AgentsResponse> {
+    return request<AgentsResponse>('/api/agents')
+  },
+
+  health(): Promise<HealthResponse> {
+    return request<HealthResponse>('/api/health')
   },
 }

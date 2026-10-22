@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
@@ -11,7 +11,14 @@ OWNER = {"email": "owner@example.com", "password": "correct-horse-battery"}
 def test_admin_reset_rotates_code_and_revokes_sessions(client: TestClient) -> None:
     setup = client.post("/api/setup", json=OWNER)
     assert setup.status_code == 201
-    old_code = setup.json()["recovery_code"]
+    csrf = setup.json()["csrf_token"]
+    generated = client.post(
+        "/api/auth/recovery-code",
+        headers={"X-CSRF-Token": csrf},
+        json={"current_password": OWNER["password"]},
+    )
+    assert generated.status_code == 200
+    old_code = generated.json()["recovery_code"]
 
     db = SessionLocal()
     try:
@@ -46,3 +53,4 @@ def test_admin_reset_rotates_code_and_revokes_sessions(client: TestClient) -> No
         },
     )
     assert old_recovery.status_code == 401
+

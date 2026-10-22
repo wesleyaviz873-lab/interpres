@@ -71,6 +71,20 @@ class PasswordReset(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
 
 
+class ProviderKey(Base):
+    __tablename__ = "provider_keys"
+
+    provider: Mapped[str] = mapped_column(String(40), primary_key=True)
+    encrypted_value: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=utcnow,
+        onupdate=utcnow,
+        nullable=False,
+    )
+
+
 class LoginChallenge(Base):
     __tablename__ = "login_challenges"
 
