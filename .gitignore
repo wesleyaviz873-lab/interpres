@@ -1,0 +1,46 @@
+# Dependencies
+node_modules/
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Build output
+dist/
+dist-electron/
+build/
+*.asar
+
+# Runtime data
+data/
+workspace/
+logs/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+local.properties
+
+# Editor and OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Test and coverage
+coverage/
+.coverage
+htmlcov/
+playwright-report/
+test-results/

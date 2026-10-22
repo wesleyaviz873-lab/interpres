@@ -1,0 +1,37 @@
+services:
+  interpres:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    image: interpres:local
+    container_name: interpres
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      APP_ENV: production
+      DATABASE_URL: sqlite:////data/interpres.db
+      DATA_DIR: /data
+      WORKSPACE_DIR: /workspace
+      WEB_DIST_DIR: /app/web/dist
+    ports:
+      - "${INTERPRES_PORT:-3000}:8000"
+    volumes:
+      - interpres_data:/data
+      - interpres_workspace:/workspace
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health')",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+volumes:
+  interpres_data:
+  interpres_workspace:

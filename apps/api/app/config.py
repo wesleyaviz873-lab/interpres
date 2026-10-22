@@ -1,0 +1,55 @@
+"""Application configuration loaded from environment variables."""
+
+from __future__ import annotations
+
+from functools import lru_cache
+from pathlib import Path
+
+from pydantic import model_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+        case_sensitive=False,
+    )
+
+    app_url: str = "http://localhost:3000"
+    app_secret: str = "dev-only-change-me"
+    app_env: str = "development"
+    database_url: str = "sqlite:///./data/interpres.db"
+    workspace_dir: Path = Path("./workspace")
+    data_dir: Path = Path("./data")
+    web_dist_dir: Path = Path("./apps/web/dist")
+    session_ttl_hours: int = 168
+    auth_max_attempts: int = 10
+    auth_window_minutes: int = 15
+    allow_signup: bool = False
+
+    @property
+    def is_production(self) -> bool:
+        return self.app_env.lower() == "production"
+
+    @property
+    def cookie_secure(self) -> bool:
+        return self.app_url.lower().startswith("https://")
+
+    @model_validator(mode="after")
+    def _validate_production_secret(self) -> "Settings":
+        insecure = {"", "change-me", "dev-only-change-me"}
+        if self.is_production and (self.app_secret in insecure or len(self.app_secret) < 32):
+            raise ValueError(
+                "APP_SECRET must be a random value with at least 32 characters in production."
+            )
+        return self
+
+
+@lru_cache
+def get_settings() -> Settings:
+    return Settings()
+
+
+settings = get_settings()

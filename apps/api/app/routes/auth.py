@@ -1,0 +1,347 @@
+"""First-run setup, login, recovery and account endpoints."""
+
+from __future__ import annotations
+
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from pydantic import BaseModel, EmailStr, Field
+from sqlalchemy import delete, func, select
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
+
+from ..auth import (
+    audit,
+    clear_session_cookie,
+    create_session,
+    require_csrf,
+    require_user,
+    set_session_cookie,
+)
+from ..config import settings
+from ..database import get_db
+from ..models import AuthSession, User, utcnow
+from ..rate_limit import RateLimiter
+from ..security import (
+    hash_password,
+    new_recovery_code,
+    normalize_recovery_code,
+    verify_password,
+)
+
+router = APIRouter(prefix="/api", tags=["auth"])
+
+_limiter = RateLimiter(
+    max_attempts=settings.auth_max_attempts,
+    window_seconds=settings.auth_window_minutes * 60,
+)
+
+
+class SetupRequest(BaseModel):
+    email: EmailStr
+    password: str = Field(min_length=10, max_length=200)
+
+
+class LoginRequest(BaseModel):
+    email: EmailStr
+    password: str = Field(min_length=1, max_length=200)
+
+
+class RecoverRequest(BaseModel):
+    email: EmailStr
+    recovery_code: str = Field(min_length=4, max_length=30)
+    new_password: str = Field(min_length=10, max_length=200)
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str = Field(min_length=1, max_length=200)
+    new_password: str = Field(min_length=10, max_length=200)
+
+
+class ChangeEmailRequest(BaseModel):
+    current_password: str = Field(min_length=1, max_length=200)
+    new_email: EmailStr
+
+
+class RecoveryCodeRequest(BaseModel):
+    current_password: str = Field(min_length=1, max_length=200)
+
+
+def _normalize_email(email: str) -> str:
+    return email.strip().lower()
+
+
+def _user_response(user: User) -> dict[str, object]:
+    return {
+        "id": user.id,
+        "email": user.email,
+        "created_at": user.created_at.isoformat(),
+    }
+
+
+def _find_user(db: Session, email: str) -> User | None:
+    return db.scalar(select(User).where(User.email == _normalize_email(email)))
+
+
+def _require_current_password(user: User, password: str) -> None:
+    if not verify_password(password, user.password_hash):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Senha atual incorreta.",
+        )
+
+
+def _ensure_new_password(current: str, new: str) -> None:
+    if current and new == current:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="A nova senha precisa ser diferente da senha atual.",
+        )
+
+
+def _set_recovery_code(user: User) -> str:
+    code = new_recovery_code()
+    user.recovery_code_hash = hash_password(normalize_recovery_code(code))
+    return code
+
+
+@router.get("/setup/status")
+def setup_status(db: Session = Depends(get_db)) -> dict[str, bool]:
+    total = db.scalar(select(func.count()).select_from(User)) or 0
+    return {"needs_setup": total == 0}
+
+
+@router.post("/setup", status_code=status.HTTP_201_CREATED)
+def setup(
+    body: SetupRequest,
+    request: Request,
+    response: Response,
+    db: Session = Depends(get_db),
+) -> dict[str, object]:
+    total = db.scalar(select(func.count()).select_from(User)) or 0
+    if total > 0:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Esta instalação já tem um dono. Use o login.",
+        )
+
+    email = _normalize_email(str(body.email))
+    user = User(email=email, password_hash=hash_password(body.password))
+    recovery_code = _set_recovery_code(user)
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+
+    auth_session, token = create_session(db, user, request)
+    audit(db, "setup.owner_created", user.id, request)
+    set_session_cookie(response, token)
+    return {
+        "user": _user_response(user),
+        "csrf_token": auth_session.csrf_token,
+        "recovery_code": recovery_code,
+    }
+
+
+@router.post("/auth/login")
+def login(
+    body: LoginRequest,
+    request: Request,
+    response: Response,
+    db: Session = Depends(get_db),
+) -> dict[str, object]:
+    email = _normalize_email(str(body.email))
+    limit_key = f"login:{request.client.host if request.client else 'unknown'}:{email}"
+    if not _limiter.allow(limit_key):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Muitas tentativas. Tente novamente em alguns minutos.",
+        )
+
+    user = _find_user(db, email)
+    if not user or not verify_password(body.password, user.password_hash):
+        _limiter.hit(limit_key)
+        audit(db, "auth.login_failed", user.id if user else None, request, email)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="E-mail ou senha inválidos.",
+        )
+
+    _limiter.reset(limit_key)
+    auth_session, token = create_session(db, user, request)
+    set_session_cookie(response, token)
+    return {"user": _user_response(user), "csrf_token": auth_session.csrf_token}
+
+
+@router.post("/auth/recover")
+def recover(
+    body: RecoverRequest,
+    request: Request,
+    response: Response,
+    db: Session = Depends(get_db),
+) -> dict[str, object]:
+    email = _normalize_email(str(body.email))
+    limit_key = f"recover:{request.client.host if request.client else 'unknown'}:{email}"
+    if not _limiter.allow(limit_key):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Muitas tentativas. Tente novamente em alguns minutos.",
+        )
+
+    user = _find_user(db, email)
+    code = normalize_recovery_code(body.recovery_code)
+    valid = bool(
+        user
+        and user.recovery_code_hash
+        and code
+        and verify_password(code, user.recovery_code_hash)
+    )
+    if not valid or not user:
+        _limiter.hit(limit_key)
+        audit(db, "auth.recovery_failed", user.id if user else None, request, email)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="E-mail ou código de recuperação inválidos.",
+        )
+
+    _limiter.reset(limit_key)
+    user.password_hash = hash_password(body.new_password)
+    new_code = _set_recovery_code(user)
+    db.execute(delete(AuthSession).where(AuthSession.user_id == user.id))
+    db.commit()
+
+    auth_session, token = create_session(db, user, request)
+    audit(db, "auth.password_recovered", user.id, request)
+    set_session_cookie(response, token)
+    return {
+        "user": _user_response(user),
+        "csrf_token": auth_session.csrf_token,
+        "recovery_code": new_code,
+    }
+
+
+@router.post("/auth/change-password")
+def change_password(
+    body: ChangePasswordRequest,
+    request: Request,
+    user: User = Depends(require_csrf),
+    db: Session = Depends(get_db),
+) -> dict[str, bool]:
+    _require_current_password(user, body.current_password)
+    _ensure_new_password(body.current_password, body.new_password)
+
+    current_session: AuthSession = request.state.auth_session
+    user.password_hash = hash_password(body.new_password)
+    db.execute(
+        delete(AuthSession).where(
+            AuthSession.user_id == user.id,
+            AuthSession.id != current_session.id,
+        )
+    )
+    db.commit()
+    audit(db, "auth.password_changed", user.id, request)
+    return {"ok": True}
+
+
+@router.post("/auth/change-email")
+def change_email(
+    body: ChangeEmailRequest,
+    request: Request,
+    user: User = Depends(require_csrf),
+    db: Session = Depends(get_db),
+) -> dict[str, object]:
+    _require_current_password(user, body.current_password)
+    new_email = _normalize_email(str(body.new_email))
+
+    existing = _find_user(db, new_email)
+    if existing and existing.id != user.id:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Este e-mail já está em uso.",
+        )
+
+    user.email = new_email
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Este e-mail já está em uso.",
+        ) from None
+
+    audit(db, "auth.email_changed", user.id, request, new_email)
+    return {"user": _user_response(user)}
+
+
+@router.post("/auth/recovery-code")
+def rotate_recovery_code(
+    body: RecoveryCodeRequest,
+    request: Request,
+    user: User = Depends(require_csrf),
+    db: Session = Depends(get_db),
+) -> dict[str, str]:
+    _require_current_password(user, body.current_password)
+    code = _set_recovery_code(user)
+    db.commit()
+    audit(db, "auth.recovery_code_rotated", user.id, request)
+    return {"recovery_code": code}
+
+
+@router.post("/auth/logout")
+def logout(
+    request: Request,
+    response: Response,
+    user: User = Depends(require_csrf),
+    db: Session = Depends(get_db),
+) -> dict[str, bool]:
+    auth_session: AuthSession | None = getattr(request.state, "auth_session", None)
+    if auth_session:
+        db.delete(auth_session)
+        db.commit()
+    audit(db, "auth.logout", user.id, request)
+    clear_session_cookie(response)
+    return {"ok": True}
+
+
+@router.post("/auth/logout-all")
+def logout_all(
+    request: Request,
+    response: Response,
+    user: User = Depends(require_csrf),
+    db: Session = Depends(get_db),
+) -> dict[str, bool]:
+    db.execute(delete(AuthSession).where(AuthSession.user_id == user.id))
+    db.commit()
+    audit(db, "auth.logout_all", user.id, request)
+    clear_session_cookie(response)
+    return {"ok": True}
+
+
+@router.get("/auth/me")
+def me(
+    request: Request,
+    user: User = Depends(require_user),
+) -> dict[str, object]:
+    auth_session: AuthSession = request.state.auth_session
+    return {
+        "user": _user_response(user),
+        "csrf_token": auth_session.csrf_token,
+        "has_recovery_code": bool(user.recovery_code_hash),
+    }
+
+
+@router.get("/auth/session")
+def session_info(
+    request: Request,
+    user: User = Depends(require_user),
+) -> dict[str, object]:
+    auth_session: AuthSession = request.state.auth_session
+    return {
+        "user": _user_response(user),
+        "csrf_token": auth_session.csrf_token,
+        "has_recovery_code": bool(user.recovery_code_hash),
+        "expires_at": auth_session.expires_at.isoformat(),
+        "expires_in_seconds": max(
+            0,
+            int((auth_session.expires_at - utcnow()).total_seconds()),
+        ),
+        "session_ttl": settings.session_ttl_hours * 3600,
+    }
