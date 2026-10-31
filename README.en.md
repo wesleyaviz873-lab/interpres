@@ -11,6 +11,10 @@ Self-hosted AI workspace: **your keys, your models, your files, your machine**.
 > real coding harnesses are running. Streaming jobs, approvals and the local agent
 > come next.
 
+| Chat | Models | Project | Harnesses |
+|---|---|---|---|
+| <img src="docs/screenshots/01-chat.jpg" width="210"> | <img src="docs/screenshots/02-modelos.jpg" width="210"> | <img src="docs/screenshots/03-projeto.jpg" width="210"> | <img src="docs/screenshots/04-harnesses.jpg" width="210"> |
+
 Interpres is for people who want a hosted-AI experience **without handing their
 keys, conversations and files to a third party**. Each installation has exactly
 one owner account, like a self-hosted n8n. There is no public signup.
@@ -113,7 +117,7 @@ those credentials.
 ## Quick start (Docker)
 
 ```bash
-git clone https://github.com/<your-user>/interpres.git
+git clone https://github.com/wesleyaviz873-lab/interpres.git
 cd interpres
 cp .env.example .env
 # generate a real secret and put it in APP_SECRET:

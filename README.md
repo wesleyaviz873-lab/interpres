@@ -11,6 +11,10 @@ Workspace de IA auto-hospedado: **suas chaves, seus modelos, seus arquivos, sua 
 > de código reais funcionando. Streaming de jobs, aprovações e agente local vêm
 > depois.
 
+| Chat | Modelos | Projeto | Harnesses |
+|---|---|---|---|
+| <img src="docs/screenshots/01-chat.jpg" width="210"> | <img src="docs/screenshots/02-modelos.jpg" width="210"> | <img src="docs/screenshots/03-projeto.jpg" width="210"> | <img src="docs/screenshots/04-harnesses.jpg" width="210"> |
+
 O Interpres é para quem quer a experiência de um chat de IA hospedado **sem
 entregar chaves, conversas e arquivos para terceiros**. Cada instalação tem um
 único dono, como um n8n auto-hospedado. Não existe cadastro público.
@@ -114,7 +118,7 @@ API). O Interpres não guarda a senha dessas ferramentas.
 ## Instalação rápida (Docker)
 
 ```bash
-git clone https://github.com/<seu-usuario>/interpres.git
+git clone https://github.com/wesleyaviz873-lab/interpres.git
 cd interpres
 cp .env.example .env
 # gere um segredo real e coloque em APP_SECRET:

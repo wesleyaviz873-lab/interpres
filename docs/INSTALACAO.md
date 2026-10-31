@@ -22,7 +22,7 @@ arquivos do seu computador.
 ### Passos
 
 ```bash
-git clone https://github.com/<seu-usuario>/interpres.git
+git clone https://github.com/wesleyaviz873-lab/interpres.git
 cd interpres
 cp .env.example .env
 ```
