@@ -1650,7 +1650,7 @@ function HarnessesSection() {
       <p className="text-[11px] leading-4 text-muted">
         {selected
           ? 'O harness marcado como "No chat" responde as mensagens e pode ler, criar e editar arquivos na pasta do projeto escolhido.'
-          : 'Nenhum harness atende o chat agora: as respostas vêm direto do provedor de API, sem acesso a arquivos.'}
+          : 'Nenhum harness atende o chat agora: as respostas vêm direto do provedor de API, sem acesso a arquivos. O harness usa o modelo e o login do próprio CLI; a chave de API do Interpres só é usada quando nenhum harness está ligado.'}
       </p>
     </Card>
   )

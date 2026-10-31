@@ -274,6 +274,20 @@ def _provider_env(db: Session) -> dict[str, str]:
     return env
 
 
+def _persist_error(db: Session, conversation: Conversation, detail: str) -> None:
+    """Store a visible failure so the user sees it after a reload."""
+    text = f"Falhou: {detail}".strip()[:4000]
+    db.add(
+        ConversationMessage(
+            conversation_id=conversation.id,
+            role="assistant",
+            content=text,
+        )
+    )
+    conversation.updated_at = utcnow()
+    db.commit()
+
+
 @router.post("")
 def chat(
     body: ChatRequest,
@@ -334,6 +348,7 @@ def chat(
             )
         except HTTPException as exc:
             logger.warning("Falha no harness %s: %s", harness_id, exc.detail)
+            _persist_error(db, conversation, str(exc.detail))
             raise
         conversation.harness = harness_id
         if session:
@@ -355,6 +370,7 @@ def chat(
             reply = OpenCodeProvider(api_key).chat(historico, body.model)
         except ProviderError as exc:
             logger.warning("Falha no chat OpenCode: %s", exc)
+            _persist_error(db, conversation, str(exc))
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)
             ) from exc

@@ -1,4 +1,4 @@
-﻿import {
+import {
   useCallback,
   useEffect,
   useMemo,
@@ -272,6 +272,7 @@ export function AppShell({ user, onUserChange, onLogout, onSessionEnded }: AppSh
   const [recallOpen, setRecallOpen] = useState(false)
   const [messages, setMessages] = useState<Message[]>([])
   const [sending, setSending] = useState(false)
+  const [elapsed, setElapsed] = useState(0)
   const [listening, setListening] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null)
@@ -443,6 +444,19 @@ export function AppShell({ user, onUserChange, onLogout, onSessionEnded }: AppSh
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
   }, [messages, sending])
+
+  useEffect(() => {
+    if (!sending) {
+      setElapsed(0)
+      return
+    }
+    const started = Date.now()
+    const timer = window.setInterval(
+      () => setElapsed(Math.floor((Date.now() - started) / 1000)),
+      1000,
+    )
+    return () => window.clearInterval(timer)
+  }, [sending])
 
   function clearFiles() {
     setFiles((current) => {
@@ -759,7 +773,7 @@ export function AppShell({ user, onUserChange, onLogout, onSessionEnded }: AppSh
               onClick={() => openSettings('harnesses')}
               title={
                 harness
-                  ? `Harness ativo: ${harness.name}. Clique para trocar.`
+                  ? `Harness ativo: ${harness.name}. Ele usa o modelo e o login do próprio CLI. Clique para trocar.`
                   : 'Nenhum harness ativo. Clique para escolher.'
               }
               className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-0.5 text-[10px] font-medium transition-colors ${
@@ -837,7 +851,10 @@ export function AppShell({ user, onUserChange, onLogout, onSessionEnded }: AppSh
                     <Chat className="h-4 w-4" />
                   </div>
                   <div className="rounded-2xl rounded-tl-md border border-line bg-panel px-3.5 py-2.5 text-[12px] text-muted">
-                    Pensando…
+                    {harness ? `Executando no ${harness.name}` : 'Pensando'}
+                    {elapsed > 1
+                      ? ` · ${Math.floor(elapsed / 60)}:${String(elapsed % 60).padStart(2, '0')}`
+                      : '…'}
                   </div>
                 </div>
               ) : null}

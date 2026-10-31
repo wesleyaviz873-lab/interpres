@@ -37,6 +37,16 @@ projeto por conversa.
 
 Se estiver em dúvida, comece pelo OpenCode. Troque quando o tipo de tarefa mudar.
 
+## Chave de API x harness
+
+Os harnesses (OpenCode, Claude Code, Codex, Gemini, Hermes) usam o **modelo e o
+login do próprio CLI**. A chave cadastrada em Configurações → Chaves de API é usada
+somente quando **nenhum harness está ligado**, no modo de conversa direta.
+
+Se você cadastrou uma chave e o chat continua sem usá-la, confira: há um harness
+ativo no topo da tela (chip com o nome dele). Desligue todos em Configurações →
+Harnesses para falar direto com o provedor da chave.
+
 ## Combinar harness com modelo
 
 O modelo do seletor é usado quando o harness aceita `--model`. O Hermes aceita

@@ -1,10 +1,11 @@
-﻿"""Install, toggle and run coding harnesses inside the Interpres workspace."""
+"""Install, toggle and run coding harnesses inside the Interpres workspace."""
 
 from __future__ import annotations
 
 import os
 import re
 import shutil
+import signal
 import subprocess
 from pathlib import Path
 
@@ -169,19 +170,13 @@ def install(harness_id: str) -> tuple[bool, str]:
     ]
     env = {**os.environ, "HOME": _home(), "NO_COLOR": "1", "CI": "1"}
     try:
-        result = subprocess.run(
-            command,
-            capture_output=True,
-            text=True,
-            timeout=600,
-            env=env,
-        )
-    except subprocess.TimeoutExpired:
-        return False, "A instalação demorou mais de 10 minutos."
+        out, err, code, timed_out = _run_process(command, Path.cwd(), env, 600)
     except OSError as exc:
         return False, f"Não foi possível executar o npm: {exc}"
-    if result.returncode != 0:
-        detail = clean_output(result.stderr or result.stdout)[-800:]
+    if timed_out:
+        return False, "A instalação demorou mais de 10 minutos."
+    if code != 0:
+        detail = clean_output(err or out)[-800:]
         return False, detail or "O npm recusou a instalação."
     return True, ""
 
@@ -206,15 +201,11 @@ def test_harness(harness_id: str) -> dict[str, object]:
     if not binary:
         return {"ok": False, "output": "Harness não instalado."}
     try:
-        result = subprocess.run(
-            [binary, "--version"],
-            capture_output=True,
-            text=True,
-            timeout=60,
-            env=_env_with_binary(harness_id),
+        out, err, code, timed_out = _run_process(
+            [binary, "--version"], Path.cwd(), _env_with_binary(harness_id), 60
         )
-        output = clean_output(result.stdout or result.stderr)
-        return {"ok": result.returncode == 0, "output": output[:1000]}
+        output = clean_output(out or err)
+        return {"ok": code == 0 and not timed_out, "output": output[:1000]}
     except Exception as exc:  # noqa: BLE001 - report tool failure to the UI
         return {"ok": False, "output": str(exc)}
 
@@ -249,12 +240,70 @@ def command_for(
     return [binary, *args, prompt]
 
 
+def _kill_tree(process: subprocess.Popen) -> None:
+    """Kill the process and every child it spawned (Windows and POSIX)."""
+    if os.name == "nt":
+        try:
+            subprocess.run(
+                ["taskkill", "/F", "/T", "/PID", str(process.pid)],
+                capture_output=True,
+                timeout=20,
+            )
+        except Exception:  # noqa: BLE001 - best effort cleanup
+            pass
+    else:
+        try:
+            os.killpg(os.getpgid(process.pid), signal.SIGKILL)
+        except Exception:  # noqa: BLE001 - best effort cleanup
+            pass
+    try:
+        process.kill()
+    except Exception:  # noqa: BLE001 - already gone
+        pass
+
+
+def _run_process(
+    command: list[str],
+    cwd: Path,
+    env: dict[str, str],
+    timeout: int,
+) -> tuple[str, str, int, bool]:
+    """Run a command with a hard timeout that also kills grandchildren."""
+    kwargs: dict[str, object] = {}
+    if os.name == "nt":
+        kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+    else:
+        kwargs["start_new_session"] = True
+    process = subprocess.Popen(
+        command,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        stdin=subprocess.DEVNULL,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        cwd=str(cwd),
+        env=env,
+        **kwargs,
+    )
+    try:
+        out, err = process.communicate(timeout=timeout)
+        return out or "", err or "", process.returncode, False
+    except subprocess.TimeoutExpired:
+        _kill_tree(process)
+        try:
+            out, err = process.communicate(timeout=15)
+        except Exception:  # noqa: BLE001 - pipes may still be held
+            out, err = "", ""
+        return out or "", err or "", -1, True
+
+
 def run_harness(
     harness_id: str,
     prompt: str,
     cwd: Path,
     extra_env: dict[str, str] | None = None,
-    timeout: int = 600,
+    timeout: int = 420,
     files: list[str] | None = None,
     session: str | None = None,
 ) -> dict[str, object]:
@@ -262,41 +311,9 @@ def run_harness(
     if not command:
         return {"ok": False, "exit_code": -1, "stdout": "", "stderr": "Harness não instalado."}
     try:
-        result = subprocess.run(
-            command,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=timeout,
-            cwd=str(cwd),
-            env=_env_with_binary(harness_id, extra_env),
+        raw_out, raw_err, code, timed_out = _run_process(
+            command, cwd, _env_with_binary(harness_id, extra_env), timeout
         )
-        stdout = clean_output(result.stdout)[-20000:]
-        stderr = clean_output(result.stderr)[-4000:]
-        if HARNESSES[harness_id].get("strip_progress"):
-            stdout = strip_progress(stdout)
-        found = ""
-        pattern = HARNESSES[harness_id].get("session_regex")
-        if pattern:
-            match = re.search(str(pattern), f"{result.stdout or ''}\n{result.stderr or ''}")
-            if match:
-                found = match.group(1)
-        return {
-            "ok": result.returncode == 0,
-            "exit_code": result.returncode,
-            "stdout": stdout,
-            "stderr": stderr,
-            "session": found,
-        }
-    except subprocess.TimeoutExpired:
-        return {
-            "ok": False,
-            "exit_code": -1,
-            "stdout": "",
-            "stderr": "Tempo limite de 10 minutos.",
-            "session": "",
-        }
     except Exception as exc:  # noqa: BLE001 - report tool failure to the UI
         return {
             "ok": False,
@@ -305,4 +322,31 @@ def run_harness(
             "stderr": str(exc),
             "session": "",
         }
+
+    if timed_out:
+        return {
+            "ok": False,
+            "exit_code": -1,
+            "stdout": clean_output(raw_out)[-2000:],
+            "stderr": f"Tempo limite de {timeout // 60} minutos. O processo foi encerrado.",
+            "session": "",
+        }
+
+    stdout = clean_output(raw_out)[-20000:]
+    stderr = clean_output(raw_err)[-4000:]
+    if HARNESSES[harness_id].get("strip_progress"):
+        stdout = strip_progress(stdout)
+    found = ""
+    pattern = HARNESSES[harness_id].get("session_regex")
+    if pattern:
+        match = re.search(str(pattern), f"{raw_out}\n{raw_err}")
+        if match:
+            found = match.group(1)
+    return {
+        "ok": code == 0,
+        "exit_code": code,
+        "stdout": stdout,
+        "stderr": stderr,
+        "session": found,
+    }
 

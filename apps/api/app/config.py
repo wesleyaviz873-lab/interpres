@@ -8,10 +8,14 @@ from pathlib import Path
 from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+_API_DIR = Path(__file__).resolve().parent.parent
+_REPO_DIR = _API_DIR.parent.parent
+_ENV_FILE = _API_DIR / ".env"
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=str(_ENV_FILE),
         env_file_encoding="utf-8",
         extra="ignore",
         case_sensitive=False,
@@ -24,7 +28,7 @@ class Settings(BaseSettings):
     database_url: str = "sqlite:///./data/interpres.db"
     workspace_dir: Path = Path("./workspace")
     data_dir: Path = Path("./data")
-    web_dist_dir: Path = Path("./apps/web/dist")
+    web_dist_dir: Path = _REPO_DIR / "apps" / "web" / "dist"
     session_ttl_hours: int = 720
     auth_max_attempts: int = 10
     auth_window_minutes: int = 15
