@@ -1,183 +1,216 @@
 # Interpres
 
-Self-hosted AI workspace. Your keys, your models, your files, your machine.
+<img src="docs/icon.png" alt="Interpres" width="88" align="right" />
 
-> **Status: early foundation (v0.1).** The owner account, login, sessions, database,
-> Docker packaging and the first web screens are working. Chat, persistent jobs,
-> providers, the workspace and the local agent are the next blocks.
+Workspace de IA auto-hospedado: **suas chaves, seus modelos, seus arquivos, sua máquina**.
 
-Interpres is designed for people who want a hosted-AI experience without handing
-their keys, conversations and files to a third party. Each installation has one
-owner account, like a self-hosted n8n. There is no public signup.
+**Português** · [English](README.en.md)
 
-## What works today
+> **Status: versão local funcional (v0.2).** Conta do dono, chaves cifradas,
+> conversas persistidas, projetos, anexos, busca em conversas antigas e harnesses
+> de código reais funcionando. Streaming de jobs, aprovações e agente local vêm
+> depois.
 
-- First-run owner creation (`/api/setup`) with a one-time recovery code.
-- Login, logout and server-side sessions with HttpOnly cookies.
-- Show/hide password on every password field.
-- Password recovery with the one-time recovery code.
-- Optional password recovery by e-mail: a 6-digit code is sent when SMTP is
-  configured.
-- Optional TOTP two-factor authentication (Google Authenticator) with QR code
-  and one-time backup codes.
-- Admin CLI: `list-users` and `reset-password` for the server owner.
-- Account settings: change e-mail, change password, rotate the recovery code and
-  log out of every device.
-- Encrypted provider key storage for OpenAI, Anthropic, Google, OpenRouter,
-  OpenCode and Ollama. Ollama is detected automatically and lists local models;
-  no API-key field is shown for it.
-- Connected-device list with per-device revoke; sessions slide while the account
-  is used (30 days by default).
-- Optional tunnel manager: Cloudflare quick link (no account), Cloudflare token
-  and ngrok. Start/stop and copy/open the public URL from Settings.
-- Settings sections for account, security, API keys, voice, harnesses, project
-  memory (future), backend health, tunnel, appearance, notifications and about.
-- A real app shell with sidebar, chat area and composer. The chat engine and
-  persistent jobs are the next block.
-- CSRF protection on state-changing requests.
-- Argon2id password hashing.
-- Login and recovery rate limiting.
-- Audit log for setup, login, failed login, recovery and account changes.
-- SQLite with Alembic migrations (PostgreSQL is a planned option).
-- Security headers and a production CSP.
-- Healthcheck at `/api/health`.
-- A React + TypeScript + Tailwind app shell with sidebar, conversation empty
-  state and the account settings modal.
-- One Docker image serving the API and the built frontend.
+O Interpres é para quem quer a experiência de um chat de IA hospedado **sem
+entregar chaves, conversas e arquivos para terceiros**. Cada instalação tem um
+único dono, como um n8n auto-hospedado. Não existe cadastro público.
 
-## Quick start
+Você escolhe o **harness** (o agente que roda de verdade na sua máquina) e o
+**modelo** que quer pagar. Trocar de harness não tira nada do seu computador.
 
-Requirements: Docker with Compose v2.
+## Para que serve
+
+- Conversar com o modelo que você já paga, com histórico salvo.
+- Pedir para um agente **criar, editar e apagar arquivos** dentro de uma pasta de
+  projeto que você escolhe.
+- Usar o mesmo app com OpenCode, Claude Code, Codex, Gemini ou Hermes — e trocar
+  quando quiser.
+- Consultar conversas antigas quando precisar de contexto, pagando quase nada
+  por isso.
+- Deixar tudo acessível no celular por um túnel (Cloudflare ou ngrok), sem abrir
+  portas no roteador.
+
+## Como funciona
+
+```
+ navegador
+    |
+    v
+ FastAPI (login, conversas, projetos, uploads)  --->  SQLite (local)
+    |
+    +--> harness na sua máquina (OpenCode / Claude Code / Codex / Gemini / Hermes)
+             roda na pasta do projeto, com as ferramentas e o login dele
+```
+
+O harness é o **executor**. O Interpres guarda sessões, projetos, histórico,
+anexos e a interface. A memória interna de cada harness (skills, aprendizado)
+fica dentro dele — e isso é proposital.
+
+## O que já funciona
+
+### Conta e segurança
+- Criação do dono na primeira execução, com código de recuperação.
+- Login, logout e sessão no servidor (cookie HttpOnly) com proteção CSRF.
+- Recuperação por código, ou por e-mail se o SMTP estiver configurado.
+- 2FA opcional (Google Authenticator) com códigos de backup.
+- CLI administrativo: `list-users` e `reset-password`.
+- Chaves de provedores cifradas com `APP_SECRET`; a API nunca devolve a chave.
+- Lista de dispositivos conectados, com revogação individual.
+- Senhas com Argon2id, limite de tentativas e registro de auditoria.
+
+### Conversas
+- Conversas e mensagens persistidas e retomadas ao abrir o app.
+- Respostas em Markdown, com links clicáveis, listas, tabelas e blocos de código.
+- Imagens e arquivos anexados (até 25 MB) são entregues ao harness.
+- Busca local nas conversas antigas; só o trecho escolhido entra no próximo pedido.
+- Seletor de modelo agrupado por provedor, com o nome do provedor fixo no topo.
+
+### Projetos
+- Escolha a pasta de trabalho pelo seletor nativo do sistema ou cole o caminho.
+- Cada projeto guarda seus anexos em `.interpres/uploads`.
+
+### Harnesses
+O Interpres detecta os agentes instalados no computador e roda dentro da pasta do
+projeto, com ferramentas reais:
+
+| Harness | Como roda | Observações |
+|---|---|---|
+| OpenCode | `opencode run --auto` | anexos por `--file` |
+| Claude Code | `claude -p` | edições automáticas |
+| Codex CLI | `codex exec --full-auto` | imagens por `--image` |
+| Gemini CLI | `gemini -p` | aprovação de edição automática |
+| Hermes Agent | `hermes chat -q` | memória, skills e sessão retomada por conversa |
+
+Só **um harness fica ativo por vez** (Configurações → Harnesses). O ativo aparece
+no topo do chat. Harnesses que aceitam modelo podem ser combinados com o
+provedor/modelo escolhido; o Hermes cobre o caso de modelo livre.
+
+### Operação
+- Túnel opcional: Cloudflare rápido (sem conta), Cloudflare com token e ngrok.
+- SQLite com migrações Alembic (PostgreSQL é opção futura).
+- Cabeçalhos de segurança e CSP em produção.
+- Healthcheck em `/api/health`.
+- Uma imagem Docker que compila o frontend e serve pela própria API.
+
+## O que precisa no computador
+
+**Opção 1 — Docker (mais simples):**
+- Docker Desktop (Windows/macOS) ou Docker + Compose (Linux).
+- Nada de Python ou Node.
+
+**Opção 2 — local (para usar harnesses de verdade):**
+- Windows 10/11, Linux ou macOS.
+- Python 3.11+ e Node 20+.
+- Pelo menos um harness instalado e logado:
+  - OpenCode: `npm install -g opencode-ai`
+  - Claude Code: instalador oficial da Anthropic
+  - Codex CLI: `npm install -g @openai/codex`
+  - Gemini CLI: `npm install -g @google/gemini-cli`
+  - Hermes Agent: `pip install hermes-agent` e `hermes setup`
+
+O desenvolvedor do harness precisa estar autenticado (login no CLI ou chave de
+API). O Interpres não guarda a senha dessas ferramentas.
+
+## Instalação rápida (Docker)
 
 ```bash
-git clone https://github.com/<your-user>/interpres.git
+git clone https://github.com/<seu-usuario>/interpres.git
 cd interpres
 cp .env.example .env
-# generate a real secret and put it in APP_SECRET:
+# gere um segredo real e coloque em APP_SECRET:
 #   openssl rand -hex 32
-# do not start with the default "change-me": production refuses it.
+# a produção recusa o "change-me"
 docker compose up -d
 ```
 
-Open <http://localhost:3000>. The first visit asks you to create the owner
-account and goes straight to the app. The recovery code is **optional and
-configured later** in **Configurações → Segurança**; there is no public signup.
+Abra <http://localhost:3000> e crie a conta do dono.
 
-For the simpler "forgot password" by e-mail, fill the `SMTP_*` variables in
-`.env` before starting. The login page then offers a 6-digit code sent to the
-account e-mail. Without SMTP, the recovery code and the admin CLI remain
-available. TOTP two-factor is optional and can be enabled later in
-**Configurações → Segurança**.
-
-To expose the installation without opening ports, use **Configurações → Túnel**.
-The Docker image includes `cloudflared` and `ngrok`. The Cloudflare quick link
-needs no account; a token is optional for a named tunnel. The link can be opened
-on the phone and the app is responsive.
-
-To stop:
-
-```bash
-docker compose down
-```
-
-To stop and erase the installation (owner, sessions, future conversations and
-the workspace):
-
-```bash
-docker compose down -v
-```
-
-## Configuration
-
-The main variables are in `.env.example`:
-
-| Variable | Meaning |
-|---|---|
-| `APP_URL` | Public URL. Use `https://...` behind a tunnel or reverse proxy. |
-| `APP_SECRET` | Random secret for this installation. Never commit it. |
-| `APP_ENV` | `production` in Docker. |
-| `INTERPRES_PORT` | Host port (default `3000`). |
-| `SESSION_TTL_HOURS` | Session lifetime (default `168`). |
-| `AUTH_MAX_ATTEMPTS` / `AUTH_WINDOW_MINUTES` | Login rate limit. |
-
-Docker keeps data in two named volumes:
-
-- `interpres_data`: database, audit log and future job storage.
-- `interpres_workspace`: the only directory the AI will be allowed to touch.
-
-## Development
-
-### API
+## Instalação local (Windows, Linux ou macOS)
 
 ```bash
 cd apps/api
 python -m venv .venv
 .venv/Scripts/python -m pip install -r requirements-dev.txt   # Windows
 # source .venv/bin/activate && pip install -r requirements-dev.txt  # Linux/macOS
-.venv/Scripts/python -m pytest
-.venv/Scripts/python -m uvicorn app.main:app --reload
-```
 
-The API runs on `http://127.0.0.1:8000`. In development it creates the SQLite
-tables automatically. Production runs `alembic upgrade head` in the container
-entrypoint.
-
-### Web
-
-```bash
-cd apps/web
+cd ../web
 npm install
-npm run dev
-```
-
-The web app runs on `http://localhost:5173` and proxies `/api` to the API on
-port `8000`.
-
-Production build:
-
-```bash
 npm run build
 ```
 
-The built files go to `apps/web/dist` and are served by the API when
-`WEB_DIST_DIR` points to them.
+Na pasta `apps/api`, suba a API apontando para o build do frontend:
 
-## Security
+```powershell
+# Windows PowerShell
+$env:APP_ENV = "development"
+$env:APP_MODE = "local"
+$env:WEB_DIST_DIR = "C:\caminho\para\interpres\apps\web\dist"
+.venv\Scripts\python -m uvicorn app.main:app --host 127.0.0.1 --port 8010
+```
 
-- The network is not the security boundary. Authentication and CSRF are inside
-  the application.
-- Session cookies are `HttpOnly`, `SameSite=Lax` and become `Secure` when
-  `APP_URL` starts with `https://`.
-- Passwords use Argon2id. API keys will be encrypted at rest in the next block.
-- TOTP secrets are encrypted at rest with `APP_SECRET`; backup codes are stored
-  as HMAC hashes and consumed once.
-- Password reset codes are hashed, expire in 15 minutes and are rate limited.
-- SMTP is optional and never required for the installation to run.
-- The workspace will be a single explicit directory; the AI will not receive
-  access to the whole disk.
-- See [docs/02-SEGURANCA.md](docs/02-SEGURANCA.md) and [SECURITY.md](SECURITY.md).
+```bash
+# Linux/macOS
+APP_ENV=development APP_MODE=local WEB_DIST_DIR="$(pwd)/../web/dist" \
+  .venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8010
+```
 
-## Structure
+Abra <http://127.0.0.1:8010>.
+
+`APP_MODE=local` libera o seletor de pastas e os harnesses. `APP_MODE=server`
+mantém só chat, provedores e workspace.
+
+## Primeiros passos
+
+1. Crie a conta do dono.
+2. Em **Configurações → Chaves de API**, cole a chave do provedor (ou aponte o
+   Ollama local).
+3. Em **Configurações → Harnesses**, clique em **Instalar** se precisar, depois
+   ligue o harness que você quer usar.
+4. No chat, escolha a pasta em **Projeto** (ex.: `C:\projetos\app`).
+5. Mande o pedido. Se quiser consultar algo de uma conversa antiga, use o botão
+   de banco ao lado do clipe.
+
+## Túnel (celular fora de casa)
+
+Use **Configurações → Túnel**:
+- **Cloudflare rápido**: sem conta, gera uma URL temporária.
+- **Cloudflare com token**: túnel nomeado, URL estável.
+- **ngrok**: precisa de conta e token.
+
+A imagem Docker já vem com `cloudflared` e `ngrok`. Passo a passo em
+[docs/TUNEL.md](docs/TUNEL.md).
+
+## Privacidade e segurança
+
+- Sem telemetria e sem serviço externo obrigatório.
+- Chaves cifradas com `APP_SECRET`; a API só informa se estão configuradas.
+- Conversas, mensagens, projetos e anexos ficam na sua máquina.
+- `.env`, banco, uploads e build ficam no `.gitignore`.
+- O repositório público não contém caminhos, e-mails, nomes de clientes ou chaves.
+
+Leia também [docs/SEGURANCA.md](docs/02-SEGURANCA.md) e [SECURITY.md](SECURITY.md).
+
+## Estrutura
 
 ```
 apps/
-  api/       FastAPI, SQLAlchemy, Alembic, auth, tests
+  api/       FastAPI, SQLAlchemy, Alembic, autenticação, harnesses, testes
   web/       React, TypeScript, Vite, Tailwind
-  agent/     local agent (next)
-docker/      Dockerfile and entrypoint
-docs/        vision, architecture, security, roadmap, checklist
-packages/    shared contracts (next)
+docker/      Dockerfile e entrypoint
+docs/        visão, arquitetura, segurança, instalação, uso e FAQ
 ```
 
-## Documentation
+## Documentação
 
-- [Vision](docs/00-VISAO.md)
-- [Architecture](docs/01-ARQUITETURA.md)
-- [Security](docs/02-SEGURANCA.md)
-- [Roadmap](docs/03-ROADMAP.md)
-- [Construction checklist](docs/04-CHECKLIST-CONSTRUCAO.md)
-- [Current state](docs/07-ESTADO-ATUAL.md)
+- [Instalação detalhada](docs/INSTALACAO.md)
+- [Como usar (e economizar tokens)](docs/USO.md)
+- [Túnel: Cloudflare e ngrok](docs/TUNEL.md)
+- [Instalar conversando com uma IA](docs/PROMPT-IA.md)
+- [Perguntas frequentes](docs/FAQ.md)
+- [Visão](docs/00-VISAO.md) · [Arquitetura](docs/01-ARQUITETURA.md) ·
+  [Segurança](docs/02-SEGURANCA.md) · [Roadmap](docs/03-ROADMAP.md) ·
+  [Estado atual](docs/07-ESTADO-ATUAL.md)
 
-## License
+## Licença
 
-AGPL-3.0. See [LICENSE](LICENSE).
+MIT. Veja [LICENSE](LICENSE).

@@ -56,6 +56,7 @@ def _item(db: Session, harness_id: str) -> dict[str, object]:
         "package": spec["package"],
         "installed": installed,
         "enabled": bool(setting.enabled and installed),
+        "selected": bool(setting.selected and installed),
     }
 
 
@@ -101,7 +102,9 @@ def list_harnesses(
     user: User = Depends(require_user),
     db: Session = Depends(get_db),
 ) -> dict[str, object]:
-    return {"harnesses": [_item(db, harness_id) for harness_id in HARNESSES]}
+    items = [_item(db, harness_id) for harness_id in HARNESSES]
+    selected = next((item["id"] for item in items if item["selected"]), None)
+    return {"harnesses": items, "selected": selected}
 
 
 @router.post("/{harness_id}/install")
@@ -140,9 +143,55 @@ def toggle_harness(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Baixe o harness antes de ativar.",
         )
-    setting.enabled = body.enabled
+    if body.enabled:
+        for row in db.scalars(select(HarnessSetting)).all():
+            row.enabled = False
+            row.selected = False
+        setting.enabled = True
+        setting.selected = True
+    else:
+        setting.enabled = False
+        setting.selected = False
     db.commit()
     audit(db, "harness.enabled" if body.enabled else "harness.disabled", user.id, request, harness_id)
+    return _item(db, harness_id)
+
+
+@router.post("/{harness_id}/select")
+def select_harness(
+    harness_id: str,
+    request: Request,
+    user: User = Depends(require_csrf),
+    db: Session = Depends(get_db),
+) -> dict[str, object]:
+    harness_id = _validate(harness_id)
+    if not is_installed(harness_id):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Instale o harness antes de usá-lo no chat.",
+        )
+    for row in db.scalars(select(HarnessSetting)).all():
+        row.selected = row.id == harness_id
+    setting = _setting(db, harness_id)
+    setting.selected = True
+    setting.enabled = True
+    db.commit()
+    audit(db, "harness.selected", user.id, request, harness_id)
+    return _item(db, harness_id)
+
+
+@router.post("/{harness_id}/deselect")
+def deselect_harness(
+    harness_id: str,
+    request: Request,
+    user: User = Depends(require_csrf),
+    db: Session = Depends(get_db),
+) -> dict[str, object]:
+    harness_id = _validate(harness_id)
+    setting = _setting(db, harness_id)
+    setting.selected = False
+    db.commit()
+    audit(db, "harness.deselected", user.id, request, harness_id)
     return _item(db, harness_id)
 
 

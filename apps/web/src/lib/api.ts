@@ -122,6 +122,98 @@ export type OllamaModelsResponse = {
   error?: string
 }
 
+export type OpenCodeModel = {
+  id: string
+  label: string
+  vendor: string
+}
+
+export type OpenCodeModelsResponse = {
+  models: OpenCodeModel[]
+}
+
+export type ChatTurn = {
+  role: 'system' | 'user' | 'assistant'
+  content: string
+}
+
+export type ConversationSummary = {
+  id: string
+  title: string
+  project_id: string | null
+  provider: string | null
+  model: string | null
+  messages: number
+  created_at: string
+  updated_at: string
+}
+
+export type ConversationMessageRow = {
+  id: string
+  role: string
+  content: string
+  created_at: string
+}
+
+export type ConversationListResponse = {
+  conversations: ConversationSummary[]
+}
+
+export type ConversationSearchResult = {
+  conversation_id: string
+  title: string
+  role: string
+  snippet: string
+  created_at: string
+}
+
+export type ConversationSearchResponse = {
+  results: ConversationSearchResult[]
+}
+
+export type ConversationResponse = {
+  conversation: ConversationSummary
+  messages: ConversationMessageRow[]
+}
+
+export type ChatAttachment = {
+  name: string
+  path: string
+  mime: string
+}
+
+export type UploadResponse = ChatAttachment & {
+  id: string
+  size: number
+}
+
+export type ChatResponse = {
+  reply: string
+  harness: string | null
+  conversation: ConversationSummary
+  user_message_id: string
+  assistant_message_id: string
+}
+
+export type ProjectInfo = {
+  id: string
+  name: string
+  path: string
+  exists: boolean
+  conversations: number
+  created_at: string
+  updated_at: string
+}
+
+export type ProjectsResponse = {
+  projects: ProjectInfo[]
+}
+
+export type PickProjectResponse = {
+  cancelled: boolean
+  project: ProjectInfo | null
+}
+
 export type HarnessInfo = {
   id: string
   name: string
@@ -129,10 +221,12 @@ export type HarnessInfo = {
   package: string
   installed: boolean
   enabled: boolean
+  selected: boolean
 }
 
 export type HarnessesResponse = {
   harnesses: HarnessInfo[]
+  selected: string | null
 }
 
 export type HarnessTestResult = {
@@ -166,7 +260,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const method = (options.method ?? 'GET').toUpperCase()
   const headers = new Headers(options.headers)
 
-  if (options.body && !headers.has('Content-Type')) {
+  if (options.body && !headers.has('Content-Type') && !(options.body instanceof FormData)) {
     headers.set('Content-Type', 'application/json')
   }
   if (csrfToken && method !== 'GET' && method !== 'HEAD') {
@@ -362,6 +456,10 @@ export const api = {
     return request<ProvidersResponse>('/api/providers')
   },
 
+  revealProvider(id: string): Promise<{ value: string }> {
+    return request<{ value: string }>(`/api/providers/${encodeURIComponent(id)}/value`)
+  },
+
   saveProvider(id: string, value: string): Promise<OkResponse> {
     return request<OkResponse>(`/api/providers/${encodeURIComponent(id)}`, {
       method: 'PUT',
@@ -379,12 +477,124 @@ export const api = {
     return request<OllamaModelsResponse>('/api/providers/ollama/models')
   },
 
+  opencodeModels(): Promise<OpenCodeModelsResponse> {
+    return request<OpenCodeModelsResponse>('/api/providers/opencode/models')
+  },
+
+  chat(
+    provider: string,
+    model: string,
+    messages: ChatTurn[],
+    options: {
+      conversationId?: string | null
+      projectId?: string | null
+      attachments?: ChatAttachment[]
+      recall?: string[]
+    } = {},
+  ): Promise<ChatResponse> {
+    return request<ChatResponse>('/api/chat', {
+      method: 'POST',
+      body: JSON.stringify({
+        provider,
+        model,
+        messages,
+        conversation_id: options.conversationId ?? null,
+        project_id: options.projectId ?? null,
+        attachments: options.attachments ?? [],
+        recall: options.recall ?? [],
+      }),
+    })
+  },
+
+  upload(file: File, projectId?: string | null): Promise<UploadResponse> {
+    const form = new FormData()
+    form.append('file', file)
+    if (projectId) form.append('project_id', projectId)
+    return request<UploadResponse>('/api/uploads', {
+      method: 'POST',
+      body: form,
+    })
+  },
+
+  conversations(): Promise<ConversationListResponse> {
+    return request<ConversationListResponse>('/api/conversations')
+  },
+
+  createConversation(input: {
+    title?: string
+    project_id?: string | null
+  } = {}): Promise<ConversationSummary> {
+    return request<ConversationSummary>('/api/conversations', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    })
+  },
+
+  conversation(id: string): Promise<ConversationResponse> {
+    return request<ConversationResponse>(`/api/conversations/${encodeURIComponent(id)}`)
+  },
+
+  searchConversations(query: string): Promise<ConversationSearchResponse> {
+    return request<ConversationSearchResponse>(
+      `/api/conversations/search?q=${encodeURIComponent(query)}`,
+    )
+  },
+
+  updateConversation(
+    id: string,
+    input: { title?: string; project_id?: string | null },
+  ): Promise<ConversationSummary> {
+    return request<ConversationSummary>(`/api/conversations/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(input),
+    })
+  },
+
+  deleteConversation(id: string): Promise<OkResponse> {
+    return request<OkResponse>(`/api/conversations/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+    })
+  },
+
+  projects(): Promise<ProjectsResponse> {
+    return request<ProjectsResponse>('/api/projects')
+  },
+
+  addProject(path: string, name?: string): Promise<ProjectInfo> {
+    return request<ProjectInfo>('/api/projects', {
+      method: 'POST',
+      body: JSON.stringify(name ? { path, name } : { path }),
+    })
+  },
+
+  pickProject(): Promise<PickProjectResponse> {
+    return request<PickProjectResponse>('/api/projects/pick', { method: 'POST' })
+  },
+
+  deleteProject(id: string): Promise<OkResponse> {
+    return request<OkResponse>(`/api/projects/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+    })
+  },
+
   harnesses(): Promise<HarnessesResponse> {
     return request<HarnessesResponse>('/api/harnesses')
   },
 
   installHarness(id: string): Promise<HarnessInfo> {
     return request<HarnessInfo>(`/api/harnesses/${encodeURIComponent(id)}/install`, {
+      method: 'POST',
+    })
+  },
+
+  selectHarness(id: string): Promise<HarnessInfo> {
+    return request<HarnessInfo>(`/api/harnesses/${encodeURIComponent(id)}/select`, {
+      method: 'POST',
+    })
+  },
+
+  deselectHarness(id: string): Promise<HarnessInfo> {
+    return request<HarnessInfo>(`/api/harnesses/${encodeURIComponent(id)}/deselect`, {
       method: 'POST',
     })
   },

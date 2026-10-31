@@ -1,4 +1,4 @@
-"""Database models for the first foundation release."""
+﻿"""Database models for the first foundation release."""
 
 from __future__ import annotations
 
@@ -108,6 +108,7 @@ class HarnessSetting(Base):
 
     id: Mapped[str] = mapped_column(String(40), primary_key=True)
     enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    selected: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     installed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(
@@ -116,6 +117,77 @@ class HarnessSetting(Base):
         onupdate=utcnow,
         nullable=False,
     )
+
+
+class Project(Base):
+    __tablename__ = "projects"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"),
+        index=True,
+        nullable=False,
+    )
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    path: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=utcnow,
+        onupdate=utcnow,
+        nullable=False,
+    )
+
+
+class Conversation(Base):
+    __tablename__ = "conversations"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"),
+        index=True,
+        nullable=False,
+    )
+    project_id: Mapped[str | None] = mapped_column(
+        ForeignKey("projects.id", ondelete="SET NULL"),
+        index=True,
+        nullable=True,
+    )
+    title: Mapped[str] = mapped_column(String(200), default="Nova conversa", nullable=False)
+    harness: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    harness_session: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    provider: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    model: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=utcnow,
+        onupdate=utcnow,
+        index=True,
+        nullable=False,
+    )
+
+    messages: Mapped[list["ConversationMessage"]] = relationship(
+        back_populates="conversation",
+        cascade="all, delete-orphan",
+        order_by="ConversationMessage.created_at",
+    )
+
+
+class ConversationMessage(Base):
+    __tablename__ = "conversation_messages"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    conversation_id: Mapped[str] = mapped_column(
+        ForeignKey("conversations.id", ondelete="CASCADE"),
+        index=True,
+        nullable=False,
+    )
+    role: Mapped[str] = mapped_column(String(20), nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+
+    conversation: Mapped[Conversation] = relationship(back_populates="messages")
 
 
 class AuditLog(Base):
@@ -127,3 +199,4 @@ class AuditLog(Base):
     detail: Mapped[str | None] = mapped_column(Text, nullable=True)
     ip: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True, nullable=False)
+

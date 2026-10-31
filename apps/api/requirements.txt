@@ -9,3 +9,4 @@ python-multipart>=0.0.9,<1
 pyotp>=2.9,<3
 qrcode[pil]>=7.4,<9
 cryptography>=43,<47
+requests>=2.32,<3

@@ -34,7 +34,7 @@ Atualizado em 2026-10-22.
   salva, só o estado "configurada".
 - Detecção automática do Ollama e listagem dos modelos instalados, sem campo de
   chave de API para o provedor local.
-- Detecção somente leitura dos agentes de código instalados no host.
+- Harnesses de código (OpenCode, Claude Code, Codex, Gemini, Hermes) detectados no host, com teste de versão, instalação via npm e escolha de um harness ativo para o chat.
 - Sessões com duração deslizante de 30 dias enquanto a conta é usada.
 - Lista de dispositivos conectados com revogação individual e "sair de todos".
 - Gerenciador de túnel com Cloudflare rápido (sem conta), Cloudflare com token
@@ -94,33 +94,48 @@ Atualizado em 2026-10-22.
   - `/api/health` saudável;
   - frontend servido pela API.
 
+
+### Conversas e projetos (2026-10-29)
+
+- Conversas e mensagens persistidas no SQLite (`conversations`, `conversation_messages`).
+- Retomada automática da última conversa ao abrir o app.
+- Projetos: pasta escolhida pelo seletor nativo do sistema, salva por usuário e usada como diretório de trabalho do harness.
+- O chat usa o harness selecionado nas configurações: o agente roda na pasta do projeto e pode ler, criar e editar arquivos.
+- Seleção exclusiva de harness: apenas um fica ligado e atende o chat por vez.
+- Anexos: upload com limite de 25 MB, gravados em `<projeto>/.interpres/uploads`; imagens são anexadas ao harness (OpenCode `--file`, Codex/Hermes `--image`) e o caminho real é informado no prompt.
+- Busca local nas conversas antigas (sem chamada de modelo), com o trecho escolhido injetado no próximo pedido.
+- Harness Hermes (Nous Research) com sessão retomada por conversa e memória própria.
+- Harness ativo exibido no topo do chat.
+
 ## O que ainda não existe
 
-- Chat, conversas e o motor que usa as chaves já armazenadas.
-- Jobs persistentes e reconexão.
-- Workspace e ferramentas.
-- Criptografia de chaves de API.
+- Streaming de jobs com SSE, retomada e cancelamento.
+- Escolha de harness e modelo por conversa (hoje é global).
+- Sessão persistente para Claude Code, Codex e Gemini.
+- Workspace isolado com permissões por ferramenta.
 - Agente local.
 - OIDC / Cloudflare Access opcional.
 - Passkeys e outros métodos de segurança.
 - Configuração de SMTP pela interface (hoje é por `.env`).
 - Aprovação explícita de novo dispositivo (hoje o dono revoga os não usados).
 - Testes E2E de navegador.
-- CI no GitHub Actions.
 - Instalador `install.sh` / `install.ps1` e prompt de instalação por IA.
 
 ## Privacidade do repositório
 
-O repositório público não contém dados do autor original: sem caminhos
-`D:\...`, sem domínios pessoais, sem nomes de clientes, sem chaves de API e sem
+O repositório público não contém dados do autor original: sem caminhos locais,
+sem domínios pessoais, sem nomes de clientes, sem chaves de API e sem
 o `.env`. O `.env.example` só tem nomes de variáveis e valores de exemplo.
 O `.env` real fica no `.gitignore`.
 
 ## Próxima ordem de trabalho
 
-1. Provedores e catálogo de modelos (incluindo Ollama).
-2. Conversas e mensagens.
-3. Motor de jobs com eventos persistidos e SSE com retomada.
-4. Workspace isolado e ferramentas com permissão.
-5. Agente local.
+1. Streaming de jobs com SSE, retomada e cancelamento.
+2. Escolha de harness e modelo por conversa (hoje é global).
+3. Sessão persistente para os demais harnesses (Claude Code, Codex, Gemini).
+4. Aprovação explícita de ferramentas e confinamento por projeto.
+5. Memória de projeto portátil (`AGENTS.md`, `skills/`, notas de execução).
 6. Instalação assistida e documentação de VPS/túnel.
+
+
+

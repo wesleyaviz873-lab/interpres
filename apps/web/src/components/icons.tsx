@@ -211,6 +211,14 @@ export function Folder({ className }: IconProps) {
   )
 }
 
+export function Paperclip({ className }: IconProps) {
+  return (
+    <IconShell className={className}>
+      <path d="M20.5 11.5 12 20a5.7 5.7 0 0 1-8.1-8.1l8-8a4 4 0 0 1 5.6 5.6l-8 8a2.3 2.3 0 0 1-3.2-3.2l7.4-7.4" />
+    </IconShell>
+  )
+}
+
 export function ChevronDown({ className }: IconProps) {
   return (
     <IconShell className={className}>
@@ -292,6 +300,15 @@ export function Database({ className }: IconProps) {
       <ellipse cx="12" cy="5.5" rx="7.5" ry="3" />
       <path d="M4.5 5.5v13c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3v-13" />
       <path d="M4.5 12c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3" />
+    </IconShell>
+  )
+}
+
+export function Search({ className }: IconProps) {
+  return (
+    <IconShell className={className}>
+      <circle cx="11" cy="11" r="6.5" />
+      <path d="M16 16l4.5 4.5" />
     </IconShell>
   )
 }

@@ -1,4 +1,4 @@
-"""Provider keys and local Ollama discovery."""
+﻿"""Provider keys and local Ollama discovery."""
 
 from __future__ import annotations
 
@@ -17,6 +17,7 @@ from ..config import settings
 from ..crypto import decrypt_secret, encrypt_secret
 from ..database import get_db
 from ..models import ProviderKey, User
+from ..providers.opencode import list_opencode_models, pretty_label, vendor_for
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +55,7 @@ def _validate_value(provider: str, value: str) -> str:
         if parsed.scheme not in {"http", "https"} or not parsed.netloc:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Use uma URL http:// ou https:// válida para o Ollama.",
+                detail="Use uma URL http:// ou https:// vÃ¡lida para o Ollama.",
             )
     return clean
 
@@ -66,7 +67,7 @@ def _ollama_base_url(db: Session) -> str:
     try:
         return decrypt_secret(row.encrypted_value)
     except Exception:
-        logger.warning("Não consegui decifrar a URL do Ollama; usando o padrão.")
+        logger.warning("NÃ£o consegui decifrar a URL do Ollama; usando o padrÃ£o.")
         return OLLAMA_DEFAULT
 
 
@@ -92,6 +93,56 @@ def list_providers(
             for provider, config in PROVIDERS.items()
         ]
     }
+
+
+@router.get("/opencode/models")
+def opencode_models(
+    user: User = Depends(require_user),
+    db: Session = Depends(get_db),
+) -> dict[str, object]:
+    row = db.get(ProviderKey, "opencode")
+    if not row:
+        return {"models": []}
+    try:
+        api_key = decrypt_secret(row.encrypted_value)
+    except Exception as exc:  # noqa: BLE001 - catalogue is best-effort
+        logger.warning("Não consegui decifrar a chave do OpenCode: %s", exc)
+        return {"models": []}
+    ids = list_opencode_models(api_key)
+    return {
+        "models": [
+            {"id": mid, "label": pretty_label(mid), "vendor": vendor_for(mid)}
+            for mid in ids
+        ]
+    }
+
+
+@router.get("/{provider}/value")
+def reveal_provider_key(
+    provider: str,
+    request: Request,
+    user: User = Depends(require_user),
+    db: Session = Depends(get_db),
+) -> dict[str, str]:
+    """Return the saved value so the owner can confirm or copy it.
+
+    The list endpoint deliberately never includes secrets; this separate call
+    only runs when the owner opens the provider card.
+    """
+    key = _validate_provider(provider)
+    row = db.get(ProviderKey, key)
+    if not row:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Nada salvo.")
+    try:
+        value = decrypt_secret(row.encrypted_value)
+    except Exception as exc:  # noqa: BLE001 - a corrupted key must not leak a traceback
+        logger.warning("NÃ£o consegui decifrar a chave de %s: %s", key, exc)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="NÃ£o foi possÃ­vel ler a chave salva.",
+        ) from exc
+    audit(db, "provider.key_revealed", user.id, request, key)
+    return {"value": value}
 
 
 @router.put("/{provider}")
@@ -146,10 +197,11 @@ def ollama_models(
         ]
         return {"reachable": True, "base_url": base_url, "models": models}
     except Exception as exc:  # noqa: BLE001 - best-effort local discovery
-        logger.info("Ollama indisponível em %s: %s", base_url, exc)
+        logger.info("Ollama indisponÃ­vel em %s: %s", base_url, exc)
         return {
             "reachable": False,
             "base_url": base_url,
             "models": [],
-            "error": "Ollama não respondeu.",
+            "error": "Ollama nÃ£o respondeu.",
         }
+

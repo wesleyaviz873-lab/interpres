@@ -1,4 +1,4 @@
-﻿"""Interpres API entry point."""
+"""Interpres API entry point."""
 
 from __future__ import annotations
 
@@ -11,7 +11,18 @@ from fastapi.staticfiles import StaticFiles
 
 from .config import settings
 from .database import Base, engine
-from .routes import agents, auth, harnesses, health, providers, tunnel
+from .routes import (
+    agents,
+    auth,
+    chat,
+    conversations,
+    harnesses,
+    health,
+    projects,
+    providers,
+    tunnel,
+    uploads,
+)
 
 
 @asynccontextmanager
@@ -27,7 +38,7 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
 
 app = FastAPI(
     title="Interpres API",
-    version="0.1.0",
+    version="0.2.0",
     lifespan=lifespan,
     docs_url=None if settings.is_production else "/api/docs",
     redoc_url=None,
@@ -57,6 +68,10 @@ async def security_headers(request, call_next):
 app.include_router(health.router)
 app.include_router(auth.router)
 app.include_router(providers.router)
+app.include_router(chat.router)
+app.include_router(conversations.router)
+app.include_router(projects.router)
+app.include_router(uploads.router)
 app.include_router(agents.router)
 app.include_router(tunnel.router)
 app.include_router(harnesses.router)

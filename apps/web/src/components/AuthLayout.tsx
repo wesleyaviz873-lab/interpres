@@ -15,9 +15,11 @@ export function AuthLayout({ title, subtitle, children }: AuthLayoutProps) {
       />
       <div className="relative w-full max-w-md">
         <header className="mb-7 flex items-center gap-3">
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-accent/30 bg-accent/10 text-sm font-semibold text-accent">
-            I
-          </div>
+          <img
+            src="/icon-192.png"
+            alt=""
+            className="h-10 w-10 rounded-xl border border-line object-cover"
+          />
           <div>
             <p className="text-sm font-semibold tracking-wide text-paper">Interpres</p>
             <p className="text-[11px] leading-4 text-muted">workspace de IA auto-hospedado</p>
@@ -31,7 +33,7 @@ export function AuthLayout({ title, subtitle, children }: AuthLayoutProps) {
         </section>
 
         <p className="mt-6 text-center text-[11px] leading-4 text-muted">
-          AGPL-3.0 · seus dados ficam nesta instalação
+          MIT · seus dados ficam nesta instalação
         </p>
       </div>
     </main>

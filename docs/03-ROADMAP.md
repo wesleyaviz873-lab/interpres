@@ -8,7 +8,7 @@ os testes e a documentacao correspondentes.
 **Entregas**
 
 - Visao, arquitetura, seguranca, roadmap e checklist.
-- Licenca AGPL-3.0.
+- Licenca MIT.
 - Estrutura de pastas do repositorio.
 - Decisoes registradas.
 

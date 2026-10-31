@@ -36,6 +36,11 @@ def test_provider_keys_are_encrypted_and_masked(client: TestClient) -> None:
     assert openai["hint"] == "Configurada"
     assert "sk-test-secret" not in str(after)
 
+    revealed = client.get("/api/providers/openai/value")
+    assert revealed.status_code == 200, revealed.text
+    assert revealed.json()["value"] == "sk-test-secret"
+    assert client.get("/api/providers/unknown/value").status_code == 404
+
     db = SessionLocal()
     try:
         row = db.get(ProviderKey, "openai")
@@ -56,6 +61,7 @@ def test_provider_keys_are_encrypted_and_masked(client: TestClient) -> None:
 
 def test_provider_requires_session_and_csrf(client: TestClient) -> None:
     assert client.get("/api/providers").status_code == 401
+    assert client.get("/api/providers/openai/value").status_code == 401
 
     setup = _setup(client)
     missing_csrf = client.put(

@@ -1424,6 +1424,25 @@ function ProviderRow({ provider, onChanged }: ProviderRowProps) {
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
 
+  useEffect(() => {
+    let cancelled = false
+    if (!provider.configured) {
+      setValue('')
+      return
+    }
+    api
+      .revealProvider(provider.id)
+      .then((data) => {
+        if (!cancelled) setValue(data.value)
+      })
+      .catch(() => {
+        if (!cancelled) setValue('')
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [provider.id, provider.configured])
+
   async function handleSave(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setError('')
@@ -1436,8 +1455,9 @@ function ProviderRow({ provider, onChanged }: ProviderRowProps) {
 
     setSaving(true)
     try {
-      await api.saveProvider(provider.id, value.trim())
-      setValue('')
+      const savedValue = value.trim()
+      await api.saveProvider(provider.id, savedValue)
+      setValue(savedValue)
       setNotice('Configuração salva.')
       onChanged(true)
     } catch (err) {
@@ -1453,6 +1473,7 @@ function ProviderRow({ provider, onChanged }: ProviderRowProps) {
     setRemoving(true)
     try {
       await api.deleteProvider(provider.id)
+      setValue('')
       setNotice('Configuração removida.')
       onChanged(false)
     } catch (err) {
@@ -1562,12 +1583,14 @@ function VoiceSection() {
 
 function HarnessesSection() {
   const [harnesses, setHarnesses] = useState<HarnessInfo[] | null>(null)
+  const [selected, setSelected] = useState<string | null>(null)
   const [error, setError] = useState('')
 
   const refresh = useCallback(async () => {
     try {
       const data = await api.harnesses()
       setHarnesses(data.harnesses)
+      setSelected(data.selected)
       setError('')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Não foi possível ler os harnesses.')
@@ -1587,7 +1610,7 @@ function HarnessesSection() {
   return (
     <Card
       title="Harnesses"
-      description="Agentes de linha de comando que rodam no workspace desta instalação."
+      description="Agentes de linha de comando que respondem o chat com acesso real à pasta do projeto."
       action={
         <Button
           type="button"
@@ -1612,14 +1635,22 @@ function HarnessesSection() {
       {harnesses && harnesses.length > 0 ? (
         <ul className="divide-y divide-line overflow-hidden rounded-lg border border-line bg-ink/40">
           {harnesses.map((harness) => (
-            <HarnessRow key={harness.id} harness={harness} onChange={handleChange} />
+            <HarnessRow
+              key={harness.id}
+              harness={harness}
+              onChange={handleChange}
+              onRefresh={() => {
+                void refresh()
+              }}
+            />
           ))}
         </ul>
       ) : null}
 
       <p className="text-[11px] leading-4 text-muted">
-        Os harnesses rodam no workspace desta instalação. O controle do PC inteiro chega com o
-        agente local.
+        {selected
+          ? 'O harness marcado como "No chat" responde as mensagens e pode ler, criar e editar arquivos na pasta do projeto escolhido.'
+          : 'Nenhum harness atende o chat agora: as respostas vêm direto do provedor de API, sem acesso a arquivos.'}
       </p>
     </Card>
   )
@@ -1628,9 +1659,10 @@ function HarnessesSection() {
 type HarnessRowProps = {
   harness: HarnessInfo
   onChange: (harness: HarnessInfo) => void
+  onRefresh: () => void
 }
 
-function HarnessRow({ harness, onChange }: HarnessRowProps) {
+function HarnessRow({ harness, onChange, onRefresh }: HarnessRowProps) {
   const [installing, setInstalling] = useState(false)
   const [toggling, setToggling] = useState(false)
   const [testing, setTesting] = useState(false)
@@ -1655,6 +1687,7 @@ function HarnessRow({ harness, onChange }: HarnessRowProps) {
     setToggling(true)
     try {
       onChange(await api.toggleHarness(harness.id, next))
+      onRefresh()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Não foi possível alterar o harness.')
     } finally {
@@ -1685,7 +1718,7 @@ function HarnessRow({ harness, onChange }: HarnessRowProps) {
               {harness.installed ? 'Instalado' : 'Não instalado'}
             </Chip>
             <Chip tone={harness.enabled ? 'ok' : 'off'}>
-              {harness.enabled ? 'Ativo' : 'Desativado'}
+              {harness.enabled ? 'No chat' : 'Desativado'}
             </Chip>
           </div>
           {harness.description ? (
@@ -1698,7 +1731,11 @@ function HarnessRow({ harness, onChange }: HarnessRowProps) {
           {harness.installed ? (
             <>
               <Switch
-                label={harness.enabled ? `Desativar ${harness.name}` : `Ativar ${harness.name}`}
+                label={
+                  harness.enabled
+                    ? `Desligar ${harness.name} do chat`
+                    : `Ligar ${harness.name} no chat`
+                }
                 checked={harness.enabled}
                 disabled={toggling}
                 onChange={(next) => {
@@ -2220,8 +2257,8 @@ function AboutSection() {
       description="Workspace de IA auto-hospedado, com seus modelos, seus arquivos e suas regras."
     >
       <div className="grid gap-2 sm:grid-cols-2">
-        <Stat label="Versão" value="0.1.0" />
-        <Stat label="Licença" value="AGPL-3.0" />
+        <Stat label="Versão" value="0.2.0" />
+        <Stat label="Licença" value="MIT" />
       </div>
       <p className="text-[11px] leading-5 text-muted">
         Software livre, sem cadastro público. Os dados desta instalação ficam no seu servidor, sob

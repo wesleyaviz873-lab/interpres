@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     app_url: str = "http://localhost:3000"
     app_secret: str = "dev-only-change-me"
     app_env: str = "development"
+    app_mode: str = "local"
     database_url: str = "sqlite:///./data/interpres.db"
     workspace_dir: Path = Path("./workspace")
     data_dir: Path = Path("./data")
@@ -40,6 +41,10 @@ class Settings(BaseSettings):
     @property
     def is_production(self) -> bool:
         return self.app_env.lower() == "production"
+
+    @property
+    def is_local_mode(self) -> bool:
+        return self.app_mode.lower() != "server"
 
     @property
     def cookie_secure(self) -> bool:

@@ -9,8 +9,8 @@ Legenda de prioridade:
 ## 1. Repositorio e governanca
 
 - [ ] P0 Nome, descricao e URL do repositorio definidos.
-- [ ] P0 Licenca AGPL-3.0 na raiz.
-- [ ] P0 README em ingles com resumo em portugues.
+- [ ] P0 Licenca MIT na raiz.
+- [ ] P0 README em portugues com versao em ingles.
 - [ ] P0 `.gitignore` cobrindo dados, segredos, builds e dependencias.
 - [ ] P0 `.env.example` sem valores reais.
 - [ ] P0 `CONTRIBUTING.md`.
