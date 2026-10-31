@@ -58,10 +58,9 @@ docs(security): document workspace isolation
 
 ## Continuous integration
 
-The workflow is provided in [`docs/ci.yml`](docs/ci.yml). It runs the API tests,
-the web build, a production dependency audit and the Docker build. To activate it
-in a repository, copy the file to `.github/workflows/ci.yml` with an account that
-has the `workflow` scope.
+GitHub Actions runs the API tests, the web build, a production dependency audit
+and the Docker build on every push and pull request. The workflow lives in
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml).
 
 ## Language
 
