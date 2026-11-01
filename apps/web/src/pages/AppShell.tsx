@@ -25,6 +25,7 @@ import {
   Paperclip,
   Send,
   Settings,
+  Speaker,
   Terminal,
   User as UserIcon,
   X,
@@ -39,7 +40,7 @@ import {
   type User,
 } from '../lib/api'
 import { buildModelOptions, groupModelOptions } from '../lib/models'
-import { applyAppearance, loadAppearance } from '../lib/preferences'
+import { applyAppearance, loadAppearance, loadVoice } from '../lib/preferences'
 
 type SpeechRecognitionResultLike = {
   0: { transcript: string }
@@ -275,9 +276,17 @@ export function AppShell({ user, onUserChange, onLogout, onSessionEnded }: AppSh
   const [sending, setSending] = useState(false)
   const [elapsed, setElapsed] = useState(0)
   const [listening, setListening] = useState(false)
+  const [transcribing, setTranscribing] = useState(false)
+  const [voiceReplies, setVoiceReplies] = useState(
+    () => localStorage.getItem('interpres_voice_replies') === '1',
+  )
+  const [speakingId, setSpeakingId] = useState<string | null>(null)
+  const [ttsEnabled, setTtsEnabled] = useState(() => loadVoice().tts !== 'none')
   const fileInputRef = useRef<HTMLInputElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null)
+  const recorderRef = useRef<MediaRecorder | null>(null)
+  const chunksRef = useRef<Blob[]>([])
   const chatEndRef = useRef<HTMLDivElement>(null)
   const filesRef = useRef<Attachment[]>([])
   const { toast, showToast } = useToast()
@@ -333,6 +342,7 @@ export function AppShell({ user, onUserChange, onLogout, onSessionEnded }: AppSh
 
   const closeSettings = useCallback(() => {
     setSettingsOpen(false)
+    setTtsEnabled(loadVoice().tts !== 'none')
     void refreshProviders()
   }, [refreshProviders])
 
@@ -439,6 +449,8 @@ export function AppShell({ user, onUserChange, onLogout, onSessionEnded }: AppSh
   useEffect(() => {
     return () => {
       recognitionRef.current?.stop()
+      recorderRef.current?.stop()
+      window.speechSynthesis?.cancel()
       filesRef.current.forEach((item) => {
         if (item.url) URL.revokeObjectURL(item.url)
       })
@@ -533,7 +545,60 @@ export function AppShell({ user, onUserChange, onLogout, onSessionEnded }: AppSh
     })
   }
 
-  function toggleListening() {
+  async function toggleListening() {
+    const prefs = loadVoice()
+
+    if (prefs.stt === 'openai') {
+      if (listening) {
+        recorderRef.current?.stop()
+        return
+      }
+      if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
+        showToast('Este navegador não grava áudio.', 'error')
+        return
+      }
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+        const recorder = new MediaRecorder(stream)
+        chunksRef.current = []
+        recorder.ondataavailable = (event) => {
+          if (event.data.size > 0) chunksRef.current.push(event.data)
+        }
+        recorder.onstop = () => {
+          stream.getTracks().forEach((track) => track.stop())
+          setListening(false)
+          const blob = new Blob(chunksRef.current, { type: recorder.mimeType || 'audio/webm' })
+          if (blob.size < 1200) {
+            showToast('Áudio muito curto.', 'error')
+            return
+          }
+          setTranscribing(true)
+          api
+            .transcribe(blob, prefs.lang)
+            .then((result) => {
+              const clean = result.text.trim()
+              if (clean) {
+                setDraft((current) => `${current}${current ? ' ' : ''}${clean}`)
+              }
+            })
+            .catch((error) => {
+              showToast(
+                error instanceof Error ? error.message : 'Não consegui transcrever.',
+                'error',
+              )
+            })
+            .finally(() => setTranscribing(false))
+        }
+        recorder.start()
+        recorderRef.current = recorder
+        setListening(true)
+      } catch {
+        setListening(false)
+        showToast('Não consegui acessar o microfone.', 'error')
+      }
+      return
+    }
+
     const speechWindow = window as SpeechWindow
     const Recognition = speechWindow.SpeechRecognition ?? speechWindow.webkitSpeechRecognition
     if (!Recognition) {
@@ -546,7 +611,7 @@ export function AppShell({ user, onUserChange, onLogout, onSessionEnded }: AppSh
     }
 
     const recognition = new Recognition()
-    recognition.lang = 'pt-BR'
+    recognition.lang = prefs.lang
     recognition.continuous = false
     recognition.interimResults = false
     recognition.onresult = (event) => {
@@ -572,6 +637,59 @@ export function AppShell({ user, onUserChange, onLogout, onSessionEnded }: AppSh
       setListening(false)
       showToast('Não foi possível iniciar o microfone.', 'error')
     }
+  }
+
+  function cleanupSpeech(markdown: string): string {
+    return markdown
+      .replace(/```[\s\S]*?```/g, ' Código omitido. ')
+      .replace(/`([^`]+)`/g, '$1')
+      .replace(/!\[[^\]]*\]\([^)]*\)/g, ' ')
+      .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+      .replace(/https?:\/\/\S+/g, ' link ')
+      .replace(/[*_#>|~]/g, ' ')
+      .replace(/[\u{1F000}-\u{1FAFF}\u{2190}-\u{27BF}]/gu, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+  }
+
+  function startSpeak(id: string, text: string) {
+    if (!window.speechSynthesis) return
+    const clean = cleanupSpeech(text)
+    if (!clean) return
+    window.speechSynthesis.cancel()
+    const prefs = loadVoice()
+    const utterance = new SpeechSynthesisUtterance(clean)
+    utterance.lang = prefs.lang
+    utterance.rate = 1
+    const voices = window.speechSynthesis.getVoices()
+    const voice =
+      voices.find((item) => item.lang === prefs.lang) ??
+      voices.find((item) => item.lang.startsWith(prefs.lang.slice(0, 2)))
+    if (voice) utterance.voice = voice
+    utterance.onend = () => setSpeakingId((current) => (current === id ? null : current))
+    utterance.onerror = () => setSpeakingId((current) => (current === id ? null : current))
+    setSpeakingId(id)
+    window.speechSynthesis.speak(utterance)
+  }
+
+  function toggleSpeak(id: string, text: string) {
+    if (speakingId === id) {
+      window.speechSynthesis?.cancel()
+      setSpeakingId(null)
+      return
+    }
+    startSpeak(id, text)
+  }
+
+  function toggleVoiceReplies() {
+    const next = !voiceReplies
+    setVoiceReplies(next)
+    localStorage.setItem('interpres_voice_replies', next ? '1' : '0')
+    if (!next) {
+      window.speechSynthesis?.cancel()
+      setSpeakingId(null)
+    }
+    showToast(next ? 'Respostas em voz ativadas' : 'Respostas em voz desativadas')
   }
 
   function selectModel(id: string) {
@@ -708,6 +826,17 @@ export function AppShell({ user, onUserChange, onLogout, onSessionEnded }: AppSh
           question: resposta.question,
         },
       ])
+      if (voiceReplies) {
+        const spoken = `${resposta.reply}${
+          resposta.question ? `. ${resposta.question.question}` : ''
+        }`.trim()
+        if (spoken) {
+          window.setTimeout(
+            () => startSpeak(resposta.assistant_message_id, spoken),
+            250,
+          )
+        }
+      }
       setActiveId(resposta.conversation.id)
       localStorage.setItem(CONVERSATION_KEY, resposta.conversation.id)
       await refreshConversations()
@@ -827,6 +956,25 @@ export function AppShell({ user, onUserChange, onLogout, onSessionEnded }: AppSh
           </div>
 
           <div className="ml-auto flex min-w-0 items-center gap-2">
+            {ttsEnabled ? (
+              <button
+                type="button"
+                onClick={toggleVoiceReplies}
+                aria-pressed={voiceReplies}
+                title={
+                  voiceReplies
+                    ? 'Respostas em voz ativadas. Clique para desligar.'
+                    : 'Responder em voz (fala as respostas)'
+                }
+                className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border transition-colors ${
+                  voiceReplies
+                    ? 'border-accent/40 bg-accent/10 text-accent'
+                    : 'border-line text-muted hover:border-white/20 hover:text-paper'
+                }`}
+              >
+                <Speaker className="h-4 w-4" />
+              </button>
+            ) : null}
             {activeProject ? (
               <span
                 className="hidden max-w-[200px] items-center gap-1.5 truncate rounded-lg border border-line px-2 py-1 text-[10.5px] text-muted sm:flex"
@@ -906,21 +1054,40 @@ export function AppShell({ user, onUserChange, onLogout, onSessionEnded }: AppSh
                       </details>
                     ) : null}
 
-                    {message.content ? (
-                      <div className="mt-1 flex items-center gap-1 opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            void navigator.clipboard
-                              .writeText(message.content)
-                              .then(() => showToast('Resposta copiada'))
-                              .catch(() => showToast('Não consegui copiar', 'error'))
-                          }}
-                          className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[10.5px] text-muted transition-colors hover:bg-white/5 hover:text-paper"
-                        >
-                          <Copy className="h-3 w-3" />
-                          Copiar
-                        </button>
+                    {message.content || message.question ? (
+                      <div className="mt-1 flex flex-wrap items-center gap-1 opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100">
+                        {message.content ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              void navigator.clipboard
+                                .writeText(message.content)
+                                .then(() => showToast('Resposta copiada'))
+                                .catch(() => showToast('Não consegui copiar', 'error'))
+                            }}
+                            className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[10.5px] text-muted transition-colors hover:bg-white/5 hover:text-paper"
+                          >
+                            <Copy className="h-3 w-3" />
+                            Copiar
+                          </button>
+                        ) : null}
+                        {ttsEnabled && 'speechSynthesis' in window ? (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              toggleSpeak(
+                                message.id,
+                                `${message.content}${
+                                  message.question ? `. ${message.question.question}` : ''
+                                }`,
+                              )
+                            }
+                            className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[10.5px] text-muted transition-colors hover:bg-white/5 hover:text-paper"
+                          >
+                            <Speaker className="h-3 w-3" />
+                            {speakingId === message.id ? 'Parar' : 'Ouvir'}
+                          </button>
+                        ) : null}
                       </div>
                     ) : null}
                   </div>
@@ -1279,15 +1446,30 @@ export function AppShell({ user, onUserChange, onLogout, onSessionEnded }: AppSh
                     </button>
                     <button
                       type="button"
-                      onClick={toggleListening}
-                      aria-label={listening ? 'Parar microfone' : 'Gravar áudio'}
+                      onClick={() => {
+                        void toggleListening()
+                      }}
+                      disabled={transcribing}
+                      aria-label={
+                        transcribing
+                          ? 'Transcrevendo'
+                          : listening
+                            ? 'Parar microfone'
+                            : 'Gravar áudio'
+                      }
                       aria-pressed={listening}
-                      title={listening ? 'Parar microfone' : 'Gravar áudio'}
+                      title={
+                        transcribing
+                          ? 'Transcrevendo…'
+                          : listening
+                            ? 'Parar microfone'
+                            : 'Gravar áudio'
+                      }
                       className={`flex h-9 w-9 items-center justify-center rounded-lg transition-colors hover:bg-white/5 ${
-                        listening
+                        listening || transcribing
                           ? 'bg-accent/15 text-accent'
                           : 'text-muted hover:text-paper'
-                      }`}
+                      } disabled:opacity-60`}
                     >
                       <Mic className="h-[18px] w-[18px]" />
                     </button>

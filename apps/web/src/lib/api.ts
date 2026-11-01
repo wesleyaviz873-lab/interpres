@@ -502,6 +502,16 @@ export const api = {
     })
   },
 
+  transcribe(file: Blob, language?: string): Promise<{ text: string }> {
+    const form = new FormData()
+    form.append('file', file, 'audio.webm')
+    if (language) form.append('language', language)
+    return request<{ text: string }>('/api/transcribe', {
+      method: 'POST',
+      body: form,
+    })
+  },
+
   upload(file: File, projectId?: string | null): Promise<UploadResponse> {
     const form = new FormData()
     form.append('file', file)

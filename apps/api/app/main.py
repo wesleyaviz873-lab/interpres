@@ -23,6 +23,7 @@ from .routes import (
     health,
     projects,
     providers,
+    transcribe,
     tunnel,
     uploads,
 )
@@ -80,7 +81,7 @@ async def security_headers(request, call_next):
     response.headers.setdefault("X-Content-Type-Options", "nosniff")
     response.headers.setdefault("X-Frame-Options", "DENY")
     response.headers.setdefault("Referrer-Policy", "no-referrer")
-    response.headers.setdefault("Permissions-Policy", "geolocation=(), microphone=(), camera=()")
+    response.headers.setdefault("Permissions-Policy", "geolocation=(), microphone=(self), camera=()")
     script_src = "script-src 'self'"
     script_hash = _inline_script_hash()
     if script_hash:
@@ -107,6 +108,7 @@ app.include_router(chat.router)
 app.include_router(conversations.router)
 app.include_router(projects.router)
 app.include_router(uploads.router)
+app.include_router(transcribe.router)
 app.include_router(agents.router)
 app.include_router(tunnel.router)
 app.include_router(harnesses.router)

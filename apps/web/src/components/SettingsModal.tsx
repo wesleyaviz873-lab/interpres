@@ -1541,7 +1541,7 @@ function VoiceSection() {
   }
 
   return (
-    <Card title="Voz" description="Preferências para o bloco de áudio.">
+    <Card title="Voz" description="Microfone, transcrição e resposta falada.">
       <label className="block">
         <span className="mb-1 block text-[11px] font-medium text-paper/90">
           Transcrição (STT)
@@ -1549,12 +1549,25 @@ function VoiceSection() {
         <select
           value={preferences.stt}
           onChange={(event) =>
-            update({ stt: event.target.value === 'local' ? 'local' : 'openai' })
+            update({ stt: event.target.value === 'openai' ? 'openai' : 'local' })
           }
           className="w-full rounded-lg border border-line bg-ink px-2.5 py-2 text-[12px] text-paper focus:border-accent/70 focus:outline-none"
         >
-          <option value="openai">OpenAI</option>
-          <option value="local">Local</option>
+          <option value="local">Navegador (grátis)</option>
+          <option value="openai">OpenAI Whisper (mistura PT/EN)</option>
+        </select>
+      </label>
+
+      <label className="block">
+        <span className="mb-1 block text-[11px] font-medium text-paper/90">Idioma</span>
+        <select
+          value={preferences.lang}
+          onChange={(event) => update({ lang: event.target.value })}
+          className="w-full rounded-lg border border-line bg-ink px-2.5 py-2 text-[12px] text-paper focus:border-accent/70 focus:outline-none"
+        >
+          <option value="pt-BR">Português (Brasil)</option>
+          <option value="en-US">English (US)</option>
+          <option value="es-ES">Español</option>
         </select>
       </label>
 
@@ -1565,22 +1578,23 @@ function VoiceSection() {
         <select
           value={preferences.tts}
           onChange={(event) =>
-            update({ tts: event.target.value === 'openai' ? 'openai' : 'none' })
+            update({ tts: event.target.value === 'browser' ? 'browser' : 'none' })
           }
           className="w-full rounded-lg border border-line bg-ink px-2.5 py-2 text-[12px] text-paper focus:border-accent/70 focus:outline-none"
         >
           <option value="none">Nenhuma</option>
-          <option value="openai">OpenAI</option>
+          <option value="browser">Navegador (grátis)</option>
         </select>
       </label>
 
       <p className="text-[11px] leading-4 text-muted">
-        O áudio chega no bloco de mídia. Nada é gravado por esta tela.
+        O microfone usa o idioma escolhido. A transcrição da OpenAI precisa da chave OpenAI em
+        Chaves de API e lida melhor com português misturado com inglês. O botão de voz no topo
+        do chat liga e desliga a resposta falada.
       </p>
     </Card>
   )
 }
-
 function HarnessesSection() {
   const [harnesses, setHarnesses] = useState<HarnessInfo[] | null>(null)
   const [selected, setSelected] = useState<string | null>(null)

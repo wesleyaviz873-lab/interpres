@@ -9,7 +9,8 @@ export type AppearancePreferences = {
 
 export type VoicePreferences = {
   stt: 'openai' | 'local'
-  tts: 'none' | 'openai'
+  tts: 'none' | 'browser'
+  lang: string
 }
 
 export type NotificationPreferences = {
@@ -34,8 +35,9 @@ export const DEFAULT_APPEARANCE: AppearancePreferences = {
 }
 
 export const DEFAULT_VOICE: VoicePreferences = {
-  stt: 'openai',
-  tts: 'none',
+  stt: 'local',
+  tts: 'browser',
+  lang: 'pt-BR',
 }
 
 export const DEFAULT_NOTIFICATIONS: NotificationPreferences = {
@@ -109,8 +111,12 @@ export function loadVoice(): VoicePreferences {
   if (!isRecord(data)) return DEFAULT_VOICE
 
   return {
-    stt: data.stt === 'local' ? 'local' : 'openai',
-    tts: data.tts === 'openai' ? 'openai' : 'none',
+    stt: data.stt === 'openai' ? 'openai' : 'local',
+    tts: data.tts === 'none' ? 'none' : 'browser',
+    lang:
+      typeof data.lang === 'string' && data.lang.length >= 2
+        ? data.lang
+        : DEFAULT_VOICE.lang,
   }
 }
 
