@@ -152,6 +152,7 @@ export type ConversationMessageRow = {
   id: string
   role: string
   content: string
+  process: string | null
   created_at: string
 }
 
@@ -178,6 +179,7 @@ export type UploadResponse = ChatAttachment & {
 
 export type ChatResponse = {
   reply: string
+  process: string | null
   harness: string | null
   conversation: ConversationSummary
   user_message_id: string

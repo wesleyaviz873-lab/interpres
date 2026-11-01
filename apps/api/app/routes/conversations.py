@@ -41,11 +41,12 @@ def serialize(conversation: Conversation, message_count: int = 0) -> dict[str, o
     }
 
 
-def serialize_message(message: ConversationMessage) -> dict[str, str]:
+def serialize_message(message: ConversationMessage) -> dict[str, object]:
     return {
         "id": message.id,
         "role": message.role,
         "content": message.content,
+        "process": message.process,
         "created_at": message.created_at.isoformat(),
     }
 

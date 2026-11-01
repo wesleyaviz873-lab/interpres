@@ -1,4 +1,4 @@
-﻿"""Database models for the first foundation release."""
+"""Database models for the first foundation release."""
 
 from __future__ import annotations
 
@@ -185,6 +185,7 @@ class ConversationMessage(Base):
     )
     role: Mapped[str] = mapped_column(String(20), nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
+    process: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
 
     conversation: Mapped[Conversation] = relationship(back_populates="messages")

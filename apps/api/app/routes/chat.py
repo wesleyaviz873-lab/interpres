@@ -198,7 +198,7 @@ def _run_harness(
     harness_id: str,
     user_env: dict[str, str],
     attachments: list[tuple[str, str, str]] | None = None,
-) -> tuple[str, str]:
+) -> tuple[str, str, str]:
     cwd = _harness_cwd(db, conversation)
     session = conversation.harness_session if conversation.harness == harness_id else None
     files: list[str] = []
@@ -236,7 +236,12 @@ def _run_harness(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=f"{HARNESSES[harness_id]['name']} não devolveu texto: {stderr[-400:]}",
         )
-    return stdout, str(result.get("session") or "")
+    process = "\n".join(
+        line
+        for line in stderr.splitlines()
+        if not line.strip().startswith(("session_id:", "Resumed session"))
+    ).strip()
+    return stdout, str(result.get("session") or ""), process[:8000]
 
 
 def _provider_env(db: Session) -> dict[str, str]:
@@ -322,7 +327,7 @@ def chat(
             if path:
                 attachments.append((item.name, str(path), item.mime))
         try:
-            reply, session = _run_harness(
+            reply, session, process = _run_harness(
                 db,
                 conversation,
                 harness_id,
@@ -337,6 +342,7 @@ def chat(
         if session:
             conversation.harness_session = session
     else:
+        process = ""
         api_key = _api_key(db, provider)
         historico = [
             ChatMessage(role=message.role, content=message.content)
@@ -356,6 +362,7 @@ def chat(
         conversation_id=conversation.id,
         role="assistant",
         content=reply,
+        process=process or None,
     )
     db.add(assistant_message)
     conversation.updated_at = utcnow()
@@ -364,6 +371,7 @@ def chat(
 
     return {
         "reply": reply,
+        "process": assistant_message.process,
         "harness": harness_id,
         "conversation": serialize_conversation(conversation, len(conversation.messages)),
         "user_message_id": user_message.id,

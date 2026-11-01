@@ -72,6 +72,7 @@ type Message = {
   id: string
   role: 'user' | 'assistant'
   content: string
+  process?: string | null
 }
 
 const MODEL_KEY = 'interpres_model'
@@ -363,6 +364,7 @@ export function AppShell({ user, onUserChange, onLogout, onSessionEnded }: AppSh
             id: message.id,
             role: message.role as 'user' | 'assistant',
             content: message.content,
+            process: message.process,
           })),
       )
       if (result.conversation.project_id) {
@@ -682,7 +684,12 @@ export function AppShell({ user, onUserChange, onLogout, onSessionEnded }: AppSh
       )
       setMessages([
         ...historico,
-        { id: resposta.assistant_message_id, role: 'assistant', content: resposta.reply },
+        {
+          id: resposta.assistant_message_id,
+          role: 'assistant',
+          content: resposta.reply,
+          process: resposta.process,
+        },
       ])
       setActiveId(resposta.conversation.id)
       localStorage.setItem(CONVERSATION_KEY, resposta.conversation.id)
@@ -847,13 +854,18 @@ export function AppShell({ user, onUserChange, onLogout, onSessionEnded }: AppSh
                     </div>
                   </div>
                 ) : (
-                  <div key={message.id} className="flex items-start gap-3">
-                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-accent/25 bg-accent/10 text-accent">
-                      <Chat className="h-4 w-4" />
-                    </div>
-                    <div className="min-w-0 max-w-[min(620px,88%)] break-words rounded-2xl rounded-tl-md border border-line bg-panel px-3.5 py-2.5 text-[12.5px] leading-5 text-paper/90">
-                      <MarkdownMessage content={message.content} />
-                    </div>
+                  <div key={message.id} className="min-w-0 max-w-full break-words px-1 text-[13px] leading-6 text-paper/90">
+                    <MarkdownMessage content={message.content} />
+                    {message.process ? (
+                      <details className="mt-2 rounded-lg border border-line/70 bg-ink/40 px-2.5 py-1.5">
+                        <summary className="cursor-pointer select-none text-[10.5px] font-medium text-muted transition-colors hover:text-paper">
+                          Ver processo
+                        </summary>
+                        <pre className="mt-1.5 max-h-56 overflow-auto whitespace-pre-wrap break-words font-mono text-[10px] leading-4 text-muted">
+                          {message.process}
+                        </pre>
+                      </details>
+                    ) : null}
                   </div>
                 ),
               )}
@@ -955,15 +967,15 @@ export function AppShell({ user, onUserChange, onLogout, onSessionEnded }: AppSh
                   value={draft}
                   onChange={(event) => setDraft(event.target.value)}
                   onKeyDown={(event) => {
-                    if (event.key === 'Enter' && !event.shiftKey) {
+                    if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
                       event.preventDefault()
                       void handleSend()
                     }
                   }}
-                  rows={1}
+                  rows={4}
                   placeholder="digite sua mensagem"
                   aria-label="Mensagem"
-                  className="max-h-32 min-h-[26px] w-full resize-none bg-transparent px-1.5 py-1 text-[13px] leading-5 text-paper placeholder:text-muted/60 focus:outline-none"
+                  className="max-h-40 min-h-[92px] w-full resize-none bg-transparent px-1.5 py-1 text-[13px] leading-5 text-paper placeholder:text-muted/60 focus:outline-none"
                 />
 
                 <div className="mt-0.5 flex flex-nowrap items-center gap-1">
@@ -1199,9 +1211,9 @@ export function AppShell({ user, onUserChange, onLogout, onSessionEnded }: AppSh
                       onClick={() => fileInputRef.current?.click()}
                       aria-label="Anexar arquivo"
                       title="Anexar imagem ou arquivo"
-                      className="flex h-8 w-8 items-center justify-center rounded-lg text-muted transition-colors hover:bg-white/5 hover:text-paper"
+                      className="flex h-9 w-9 items-center justify-center rounded-lg text-muted transition-colors hover:bg-white/5 hover:text-paper"
                     >
-                      <Paperclip className="h-4 w-4" />
+                      <Paperclip className="h-[18px] w-[18px]" />
                     </button>
                     <button
                       type="button"
@@ -1209,22 +1221,22 @@ export function AppShell({ user, onUserChange, onLogout, onSessionEnded }: AppSh
                       aria-label={listening ? 'Parar microfone' : 'Gravar áudio'}
                       aria-pressed={listening}
                       title={listening ? 'Parar microfone' : 'Gravar áudio'}
-                      className={`flex h-8 w-8 items-center justify-center rounded-lg transition-colors hover:bg-white/5 ${
+                      className={`flex h-9 w-9 items-center justify-center rounded-lg transition-colors hover:bg-white/5 ${
                         listening
                           ? 'bg-accent/15 text-accent'
                           : 'text-muted hover:text-paper'
                       }`}
                     >
-                      <Mic className="h-4 w-4" />
+                      <Mic className="h-[18px] w-[18px]" />
                     </button>
                     <button
                       type="submit"
                       disabled={((!draft.trim() && files.length === 0) || sending)}
                       aria-label="Enviar mensagem"
                       title="Enviar mensagem"
-                      className="ml-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-accent text-black transition-colors hover:bg-orange-400 disabled:cursor-not-allowed disabled:opacity-40"
+                      className="ml-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-accent text-black transition-colors hover:bg-orange-400 disabled:cursor-not-allowed disabled:opacity-40"
                     >
-                      <Send className="h-4 w-4" />
+                      <Send className="h-[18px] w-[18px]" />
                     </button>
                   </div>
                 </div>
