@@ -60,8 +60,11 @@ async def security_headers(request, call_next):
     )
     if settings.is_production:
         response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+    if request.url.path.startswith("/assets/"):
+        response.headers.setdefault("Cache-Control", "public, max-age=31536000, immutable")
     if request.url.path == "/" or request.url.path.endswith("index.html"):
         response.headers["Cache-Control"] = "no-store"
+        response.headers["Cloudflare-CDN-Cache-Control"] = "no-store"
     return response
 
 
