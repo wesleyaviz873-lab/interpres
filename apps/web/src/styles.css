@@ -71,3 +71,12 @@ details[open] .process-closed {
 details[open] .chevron {
   transform: rotate(180deg);
 }
+
+.chevron-arrow {
+  display: inline-block;
+  transition: transform 0.15s;
+}
+
+details[open] .chevron-arrow {
+  transform: rotate(90deg);
+}

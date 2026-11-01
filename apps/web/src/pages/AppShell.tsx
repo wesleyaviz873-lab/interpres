@@ -9,6 +9,7 @@ import {
 } from 'react'
 import { Button } from '../components/Button'
 import { MarkdownMessage } from '../components/MarkdownMessage'
+import { ProcessBlock } from '../components/ProcessBlock'
 import { QuestionCard } from '../components/QuestionCard'
 import { SettingsModal, type SettingsSection } from '../components/SettingsModal'
 import { Toast, useToast } from '../components/Toast'
@@ -41,6 +42,7 @@ import {
   type User,
 } from '../lib/api'
 import { buildModelOptions, groupModelOptions } from '../lib/models'
+import { humanizeProgress } from '../lib/progress'
 import { applyAppearance, loadAppearance, loadVoice } from '../lib/preferences'
 
 type SpeechRecognitionResultLike = {
@@ -283,6 +285,7 @@ export function AppShell({ user, onUserChange, onLogout, onSessionEnded }: AppSh
   )
   const [speakingId, setSpeakingId] = useState<string | null>(null)
   const [job, setJob] = useState<{ id: string; log: string[]; status: string } | null>(null)
+  const [autoScroll, setAutoScroll] = useState(true)
   const [ttsEnabled, setTtsEnabled] = useState(() => loadVoice().tts !== 'none')
   const fileInputRef = useRef<HTMLInputElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -290,6 +293,7 @@ export function AppShell({ user, onUserChange, onLogout, onSessionEnded }: AppSh
   const recorderRef = useRef<MediaRecorder | null>(null)
   const chunksRef = useRef<Blob[]>([])
   const chatEndRef = useRef<HTMLDivElement>(null)
+  const messagesRef = useRef<HTMLDivElement>(null)
   const jobLogRef = useRef<HTMLPreElement>(null)
   const filesRef = useRef<Attachment[]>([])
   const { toast, showToast } = useToast()
@@ -304,6 +308,7 @@ export function AppShell({ user, onUserChange, onLogout, onSessionEnded }: AppSh
   const selectedModel = modelOptions.find((model) => model.id === selectedModelId) ?? null
   const activeConversation = conversations.find((item) => item.id === activeId) ?? null
   const activeProject = projects.find((item) => item.id === activeProjectId) ?? null
+  const jobProgress = useMemo(() => (job ? humanizeProgress(job.log) : null), [job])
 
   const refreshProviders = useCallback(async () => {
     const [providersResult, ollamaResult, opencodeResult, harnessResult] =
@@ -397,6 +402,7 @@ export function AppShell({ user, onUserChange, onLogout, onSessionEnded }: AppSh
       }
       setDraft('')
       clearFiles()
+      setAutoScroll(true)
     } catch {
       showToast('Não consegui abrir essa conversa.', 'error')
     }
@@ -476,8 +482,10 @@ export function AppShell({ user, onUserChange, onLogout, onSessionEnded }: AppSh
   }, [])
 
   useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
-  }, [messages, sending])
+    if (!autoScroll) return
+    const el = messagesRef.current
+    if (el) el.scrollTop = el.scrollHeight
+  }, [messages, job?.log.length, sending, autoScroll])
 
   useEffect(() => {
     if (!sending) {
@@ -534,6 +542,7 @@ export function AppShell({ user, onUserChange, onLogout, onSessionEnded }: AppSh
     setSidebarOpen(false)
     setDraft('')
     clearFiles()
+    setAutoScroll(true)
 
     setMessages([])
     setActiveId(null)
@@ -878,6 +887,7 @@ export function AppShell({ user, onUserChange, onLogout, onSessionEnded }: AppSh
     if (!usingOverride) {
       setDraft('')
       clearFiles()
+      setAutoScroll(true)
     }
 
     setSending(true)
@@ -1053,7 +1063,16 @@ export function AppShell({ user, onUserChange, onLogout, onSessionEnded }: AppSh
         </header>
 
         <main className="flex min-h-0 flex-1 flex-col">
-          <div className="min-h-0 flex-1 overflow-y-auto px-4 py-6">
+          <div className="relative min-h-0 flex-1">
+            <div
+              ref={messagesRef}
+              onScroll={(event) => {
+                const el = event.currentTarget
+                const distance = el.scrollHeight - el.scrollTop - el.clientHeight
+                setAutoScroll(distance < 80)
+              }}
+              className="h-full overflow-y-auto px-4 py-6"
+            >
             <div className="mx-auto flex w-full max-w-3xl flex-col gap-3.5">
               <div className="flex items-start gap-3">
                 <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-accent/25 bg-accent/10 text-accent">
@@ -1103,18 +1122,7 @@ export function AppShell({ user, onUserChange, onLogout, onSessionEnded }: AppSh
                       />
                     ) : null}
 
-                    {message.process ? (
-                      <details className="mt-2 rounded-lg border border-line/70 bg-ink/40 px-2.5 py-1.5">
-                        <summary className="flex cursor-pointer select-none items-center gap-1 text-[10.5px] font-medium text-muted transition-colors hover:text-paper">
-                          <ChevronDown className="chevron h-3 w-3 shrink-0 transition-transform" />
-                          <span className="process-closed">Ver processo</span>
-                          <span className="process-open">Ocultar processo</span>
-                        </summary>
-                        <pre className="mt-1.5 max-h-56 overflow-auto whitespace-pre-wrap break-words font-mono text-[10px] leading-4 text-muted">
-                          {message.process}
-                        </pre>
-                      </details>
-                    ) : null}
+                    {message.process ? <ProcessBlock raw={message.process} /> : null}
 
                     {message.content || message.question ? (
                       <div className="mt-1 flex flex-wrap items-center gap-1 opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100">
@@ -1172,7 +1180,8 @@ export function AppShell({ user, onUserChange, onLogout, onSessionEnded }: AppSh
                       </span>
                       {job ? (
                         <span className="ml-auto shrink-0 text-[10px] text-muted/80">
-                          {job.log.length} {job.log.length === 1 ? 'passo' : 'passos'}
+                          {jobProgress?.lines.length ?? 0}{' '}
+                          {(jobProgress?.lines.length ?? 0) === 1 ? 'passo' : 'passos'}
                         </span>
                       ) : null}
                     </summary>
@@ -1180,9 +1189,13 @@ export function AppShell({ user, onUserChange, onLogout, onSessionEnded }: AppSh
                       ref={jobLogRef}
                       className="mt-2 max-h-56 overflow-auto whitespace-pre-wrap break-words font-mono text-[10px] leading-4 text-muted"
                     >
-                      {job && job.log.length > 0
-                        ? job.log.join('\n')
-                        : 'Aguardando o primeiro passo...'}
+                      {jobProgress && jobProgress.lines.length > 0
+                        ? `${jobProgress.lines.join('\n')}${
+                            jobProgress.skipped > 0
+                              ? `\n\n(${jobProgress.skipped} linhas técnicas omitidas)`
+                              : ''
+                          }`
+                        : 'Trabalhando…'}
                     </pre>
                   </details>
                 </div>
@@ -1214,6 +1227,20 @@ export function AppShell({ user, onUserChange, onLogout, onSessionEnded }: AppSh
                 </div>
               ) : null}
             </div>
+          </div>
+            {!autoScroll ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setAutoScroll(true)
+                  const el = messagesRef.current
+                  if (el) el.scrollTop = el.scrollHeight
+                }}
+                className="absolute bottom-3 right-4 z-10 rounded-full border border-line bg-panel px-3 py-1.5 text-[11px] text-paper shadow-lg shadow-black/40 transition-colors hover:border-white/25"
+              >
+                Ir para o fim
+              </button>
+            ) : null}
           </div>
 
           <div className="shrink-0 border-t border-line px-2.5 py-2.5 pb-[calc(0.625rem+env(safe-area-inset-bottom))] sm:px-4 sm:py-3">
