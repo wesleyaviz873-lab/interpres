@@ -61,3 +61,14 @@ CLOUDFLARE_TUNNEL_TOKEN=opcional
 ```
 
 `APP_URL` em `https://` faz o cookie de sessão virar `Secure`.
+
+## Túnel nomeado (URL fixa)
+
+Se você já tem um túnel da Cloudflare criado no painel e um `config.yml` em
+`~/.cloudflared`, aponte o hostname para `http://localhost:8010` e deixe o
+`cloudflared tunnel run` rodando. A URL (`https://seu-dominio`) nunca muda.
+
+Não rode o túnel rápido em paralelo com o nomeado: use um ou outro.
+
+Se o hostname estiver protegido por **Cloudflare Access**, você verá a tela de
+login do Access antes da tela de login do Interpres. É esperado: são duas camadas.

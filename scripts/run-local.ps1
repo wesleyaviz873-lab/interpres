@@ -1,6 +1,8 @@
 # Starts the Interpres API in local mode and opens it in the browser.
 # Safe to run many times: it only starts the server when port 8010 is free.
 
+param([switch]$NoBrowser)
+
 $ErrorActionPreference = "Stop"
 
 $repo = Split-Path -Parent $PSScriptRoot
@@ -69,4 +71,6 @@ if (-not (Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction Silen
     }
 }
 
-Start-Process $url
+if (-not $NoBrowser) {
+    Start-Process $url
+}
