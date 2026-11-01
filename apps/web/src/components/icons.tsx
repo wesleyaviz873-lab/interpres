@@ -284,6 +284,14 @@ export function Mic({ className }: IconProps) {
   )
 }
 
+export function Trash({ className }: IconProps) {
+  return (
+    <IconShell className={className}>
+      <path d="M4 7h16M9 7V5h6v2M6.5 7l.8 13h9.4l.8-13" />
+      <path d="M10 11v6M14 11v6" />
+    </IconShell>
+  )
+}
 export function Camera({ className }: IconProps) {
   return (
     <IconShell className={className}>

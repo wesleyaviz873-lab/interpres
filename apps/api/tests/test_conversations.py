@@ -479,3 +479,33 @@ def test_async_chat_streams_progress(client: TestClient, monkeypatch) -> None:
     assert any("passo um" in line for line in data["log"])
     assert data["result"]["reply"] == "resposta final"
     assert client.get("/api/chat/jobs/inexistente").status_code == 404
+
+def test_delete_message_from_conversation(client: TestClient) -> None:
+    _setup(client)
+    headers = _headers(client)
+    conversation = client.post("/api/conversations", headers=headers, json={}).json()
+
+    db = SessionLocal()
+    try:
+        message = ConversationMessage(
+            conversation_id=conversation["id"], role="assistant", content="apagar"
+        )
+        db.add(message)
+        db.commit()
+        db.refresh(message)
+        message_id = message.id
+    finally:
+        db.close()
+
+    deleted = client.delete(
+        f"/api/conversations/{conversation['id']}/messages/{message_id}",
+        headers=headers,
+    )
+    assert deleted.status_code == 200, deleted.text
+    assert client.get(f"/api/conversations/{conversation['id']}").json()["messages"] == []
+
+    again = client.delete(
+        f"/api/conversations/{conversation['id']}/messages/{message_id}",
+        headers=headers,
+    )
+    assert again.status_code == 404

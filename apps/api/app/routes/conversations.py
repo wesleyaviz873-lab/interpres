@@ -10,6 +10,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..auth import require_csrf, require_user
+from ..config import settings
+from ..config import settings
 from ..database import get_db
 from ..models import Conversation, ConversationMessage, Project, User, utcnow
 
@@ -164,5 +166,29 @@ def delete_conversation(
 ) -> dict[str, bool]:
     conversation = _owned(db, user, conversation_id)
     db.delete(conversation)
+    db.commit()
+    return {"ok": True}
+@router.delete("/{conversation_id}/messages/{message_id}")
+def delete_message(
+    conversation_id: str,
+    message_id: str,
+    user: User = Depends(require_csrf),
+    db: Session = Depends(get_db),
+) -> dict[str, bool]:
+    conversation = _owned(db, user, conversation_id)
+    message = db.get(ConversationMessage, message_id)
+    if not message or message.conversation_id != conversation.id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Mensagem não encontrada."
+        )
+    if message.image and message.image.startswith("/api/screenshots/"):
+        name = message.image.rsplit("/", 1)[-1]
+        if name and "/" not in name:
+            try:
+                (settings.data_dir.resolve() / "screenshots" / name).unlink(missing_ok=True)
+            except OSError:
+                pass
+    db.delete(message)
+    conversation.updated_at = utcnow()
     db.commit()
     return {"ok": True}

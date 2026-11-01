@@ -4,6 +4,7 @@ import remarkGfm from 'remark-gfm'
 
 type MarkdownMessageProps = {
   content: string
+  onImageClick?: (src: string, alt: string) => void
 }
 
 function childrenToText(children: ReactNode): string {
@@ -13,7 +14,7 @@ function childrenToText(children: ReactNode): string {
   return ''
 }
 
-export function MarkdownMessage({ content }: MarkdownMessageProps) {
+export function MarkdownMessage({ content, onImageClick }: MarkdownMessageProps) {
   return (
     <div className="interpres-markdown">
       <ReactMarkdown
@@ -112,11 +113,17 @@ export function MarkdownMessage({ content }: MarkdownMessageProps) {
             return <td className="border border-line px-2 py-1 align-top">{children}</td>
           },
           img({ src, alt }) {
+            const source = typeof src === 'string' ? src : ''
             return (
               <img
-                src={typeof src === 'string' ? src : undefined}
+                src={source}
                 alt={alt ?? ''}
-                className="my-2 max-h-64 rounded-lg border border-line"
+                onClick={() => {
+                  if (source && onImageClick) onImageClick(source, alt ?? '')
+                }}
+                className={`my-2 max-h-64 rounded-lg border border-line ${
+                  onImageClick ? 'cursor-zoom-in' : ''
+                }`}
               />
             )
           },

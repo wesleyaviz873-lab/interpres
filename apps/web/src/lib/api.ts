@@ -614,6 +614,13 @@ export const api = {
     })
   },
 
+  deleteMessage(conversationId: string, messageId: string): Promise<OkResponse> {
+    return request<OkResponse>(
+      `/api/conversations/${encodeURIComponent(conversationId)}/messages/${encodeURIComponent(messageId)}`,
+      { method: 'DELETE' },
+    )
+  },
+
   deleteConversation(id: string): Promise<OkResponse> {
     return request<OkResponse>(`/api/conversations/${encodeURIComponent(id)}`, {
       method: 'DELETE',

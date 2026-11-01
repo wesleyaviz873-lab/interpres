@@ -9,6 +9,8 @@ import {
 } from 'react'
 import { Button } from '../components/Button'
 import { MarkdownMessage } from '../components/MarkdownMessage'
+import { ConfirmDialog } from '../components/ConfirmDialog'
+import { ImageLightbox } from '../components/ImageLightbox'
 import { ProcessBlock } from '../components/ProcessBlock'
 import { QuestionCard } from '../components/QuestionCard'
 import { SettingsModal, type SettingsSection } from '../components/SettingsModal'
@@ -29,6 +31,7 @@ import {
   Settings,
   Speaker,
   Terminal,
+  Trash,
   User as UserIcon,
   X,
 } from '../components/icons'
@@ -288,6 +291,8 @@ export function AppShell({ user, onUserChange, onLogout, onSessionEnded }: AppSh
   const [speakingId, setSpeakingId] = useState<string | null>(null)
   const [job, setJob] = useState<{ id: string; log: string[]; status: string } | null>(null)
   const [capturing, setCapturing] = useState(false)
+  const [lightbox, setLightbox] = useState<{ src: string; alt: string } | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; preview: string } | null>(null)
   const [autoScroll, setAutoScroll] = useState(true)
   const [ttsEnabled, setTtsEnabled] = useState(() => loadVoice().tts !== 'none')
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -798,6 +803,19 @@ export function AppShell({ user, onUserChange, onLogout, onSessionEnded }: AppSh
     }
   }
 
+  async function confirmDeleteMessage() {
+    if (!deleteTarget || !activeId) return
+    const messageId = deleteTarget.id
+    setDeleteTarget(null)
+    try {
+      await api.deleteMessage(activeId, messageId)
+      setMessages((current) => current.filter((message) => message.id !== messageId))
+      await refreshConversations()
+      showToast('Mensagem excluída')
+    } catch {
+      showToast('Não consegui excluir a mensagem.', 'error')
+    }
+  }
   async function captureScreen() {
     if (capturing) return
     setCapturing(true)
@@ -1139,13 +1157,16 @@ export function AppShell({ user, onUserChange, onLogout, onSessionEnded }: AppSh
                     key={message.id}
                     className="group min-w-0 max-w-full break-words px-1 text-[13px] leading-6 text-paper/90"
                   >
-                    {message.content ? <MarkdownMessage content={message.content} /> : null}
+                    {message.content ? <MarkdownMessage
+                      content={message.content}
+                      onImageClick={(src, alt) => setLightbox({ src, alt })}
+                    /> : null}
 
                     {message.image ? (
                       <img
                         src={message.image}
                         alt="Print da tela"
-                        onClick={() => window.open(message.image ?? '', '_blank', 'noopener')}
+                        onClick={() => setLightbox({ src: message.image ?? '', alt: 'Print da tela' })}
                         className="mt-2 max-h-80 w-auto cursor-zoom-in rounded-lg border border-line"
                       />
                     ) : null}
@@ -1200,6 +1221,23 @@ export function AppShell({ user, onUserChange, onLogout, onSessionEnded }: AppSh
                           >
                             <Speaker className="h-3 w-3" />
                             {speakingId === message.id ? 'Parar' : 'Ouvir'}
+                          </button>
+                        ) : null}
+                        {activeId ? (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setDeleteTarget({
+                                id: message.id,
+                                preview:
+                                  (message.content || message.question?.question || 'esta mensagem')
+                                    .slice(0, 60),
+                              })
+                            }
+                            className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[10.5px] text-muted transition-colors hover:bg-red-500/10 hover:text-red-300"
+                          >
+                            <Trash className="h-3 w-3" />
+                            Excluir
                           </button>
                         ) : null}
                       </div>
@@ -1657,6 +1695,26 @@ export function AppShell({ user, onUserChange, onLogout, onSessionEnded }: AppSh
         />
       ) : null}
 
+
+      {lightbox ? (
+        <ImageLightbox
+          src={lightbox.src}
+          alt={lightbox.alt}
+          onClose={() => setLightbox(null)}
+        />
+      ) : null}
+
+      {deleteTarget ? (
+        <ConfirmDialog
+          title="Excluir mensagem?"
+          message={`A mensagem "${deleteTarget.preview}" será removida da conversa. Não dá para desfazer.`}
+          confirmLabel="Excluir"
+          onCancel={() => setDeleteTarget(null)}
+          onConfirm={() => {
+            void confirmDeleteMessage()
+          }}
+        />
+      ) : null}
 
       <Toast toast={toast} />
     </div>
