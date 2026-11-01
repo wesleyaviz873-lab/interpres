@@ -1,7 +1,7 @@
 # Starts the Interpres API in local mode and opens it in the browser.
 # Safe to run many times: it only starts the server when port 8010 is free.
 
-param([switch]$NoBrowser)
+param([switch]$NoBrowser, [switch]$BindAll)
 
 $ErrorActionPreference = "Stop"
 
@@ -49,11 +49,13 @@ if (-not (Test-Path -LiteralPath (Join-Path $dist "index.html"))) {
     }
 }
 
+$bindHost = if ($BindAll) { "0.0.0.0" } else { "127.0.0.1" }
+
 if (-not (Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue)) {
     $logs = Join-Path $repo "logs"
     New-Item -ItemType Directory -Path $logs -Force | Out-Null
     Start-Process -FilePath $python `
-        -ArgumentList "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", "$port" `
+        -ArgumentList "-m", "uvicorn", "app.main:app", "--host", $bindHost, "--port", "$port" `
         -WorkingDirectory $api `
         -RedirectStandardOutput (Join-Path $logs "api.out.log") `
         -RedirectStandardError (Join-Path $logs "api.err.log") `
