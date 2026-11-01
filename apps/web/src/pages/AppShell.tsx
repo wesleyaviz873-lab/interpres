@@ -272,6 +272,7 @@ export function AppShell({ user, onUserChange, onLogout, onSessionEnded }: AppSh
   const [elapsed, setElapsed] = useState(0)
   const [listening, setListening] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null)
   const chatEndRef = useRef<HTMLDivElement>(null)
   const filesRef = useRef<Attachment[]>([])
@@ -455,6 +456,13 @@ export function AppShell({ user, onUserChange, onLogout, onSessionEnded }: AppSh
     )
     return () => window.clearInterval(timer)
   }, [sending])
+
+  useEffect(() => {
+    const el = textareaRef.current
+    if (el && !draft) {
+      el.style.height = 'auto'
+    }
+  }, [draft])
 
   useEffect(() => {
     const viewport = window.visualViewport
@@ -965,17 +973,22 @@ export function AppShell({ user, onUserChange, onLogout, onSessionEnded }: AppSh
 
                 <textarea
                   value={draft}
-                  onChange={(event) => setDraft(event.target.value)}
+                  onChange={(event) => {
+                    setDraft(event.target.value)
+                    const el = event.currentTarget
+                    el.style.height = 'auto'
+                    el.style.height = `${Math.min(el.scrollHeight, 96)}px`
+                  }}
                   onKeyDown={(event) => {
                     if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
                       event.preventDefault()
                       void handleSend()
                     }
                   }}
-                  rows={4}
+                  ref={textareaRef}
                   placeholder="digite sua mensagem"
                   aria-label="Mensagem"
-                  className="max-h-40 min-h-[92px] w-full resize-none bg-transparent px-1.5 py-1 text-[13px] leading-5 text-paper placeholder:text-muted/60 focus:outline-none"
+                  className="max-h-24 min-h-[34px] w-full resize-none overflow-y-auto bg-transparent px-1.5 py-1 text-[13px] leading-5 text-paper placeholder:text-muted/60 focus:outline-none"
                 />
 
                 <div className="mt-0.5 flex flex-nowrap items-center gap-1">

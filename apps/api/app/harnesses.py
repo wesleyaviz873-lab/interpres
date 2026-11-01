@@ -94,23 +94,32 @@ def _looks_like_progress(line: str) -> bool:
     return False
 
 
-def strip_progress(text: str) -> str:
-    """Remove the tool-progress block Hermes prints before the final answer."""
+def split_progress(text: str) -> tuple[str, str]:
+    """Split Hermes output into (final answer, tool progress)."""
     lines = text.splitlines()
-    result: list[str] = []
+    answer: list[str] = []
+    progress: list[str] = []
     skipping = False
     for line in lines:
         if not skipping and line.lstrip().startswith(_PROGRESS_MARKS):
             skipping = True
+            progress.append(line)
             continue
         if skipping:
             if _looks_like_progress(line):
+                progress.append(line)
                 continue
             skipping = False
         if line.strip().startswith("session_id:"):
+            progress.append(line)
             continue
-        result.append(line)
-    return "\n".join(result).strip()
+        answer.append(line)
+    return "\n".join(answer).strip(), "\n".join(progress).strip()
+
+
+def strip_progress(text: str) -> str:
+    """Remove the tool-progress block Hermes prints before the final answer."""
+    return split_progress(text)[0]
 
 
 def _home() -> str:
@@ -332,10 +341,12 @@ def run_harness(
             "session": "",
         }
 
-    stdout = clean_output(raw_out)[-20000:]
-    stderr = clean_output(raw_err)[-4000:]
+    cleaned = clean_output(raw_out)
+    progress = ""
     if HARNESSES[harness_id].get("strip_progress"):
-        stdout = strip_progress(stdout)
+        cleaned, progress = split_progress(cleaned)
+    stdout = cleaned[-20000:]
+    stderr = clean_output(raw_err)[-4000:]
     found = ""
     pattern = HARNESSES[harness_id].get("session_regex")
     if pattern:
@@ -347,6 +358,7 @@ def run_harness(
         "exit_code": code,
         "stdout": stdout,
         "stderr": stderr,
+        "progress": progress[-8000:],
         "session": found,
     }
 

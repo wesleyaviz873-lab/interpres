@@ -236,12 +236,18 @@ def _run_harness(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=f"{HARNESSES[harness_id]['name']} não devolveu texto: {stderr[-400:]}",
         )
-    process = "\n".join(
+    parts: list[str] = []
+    progress = str(result.get("progress") or "").strip()
+    if progress:
+        parts.append(progress)
+    harness_stderr = "\n".join(
         line
         for line in stderr.splitlines()
         if not line.strip().startswith(("session_id:", "Resumed session"))
     ).strip()
-    return stdout, str(result.get("session") or ""), process[:8000]
+    if harness_stderr:
+        parts.append(harness_stderr)
+    return stdout, str(result.get("session") or ""), "\n".join(parts)[:8000]
 
 
 def _provider_env(db: Session) -> dict[str, str]:
