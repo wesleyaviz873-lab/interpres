@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import base64
+import hashlib
+import re
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import AsyncIterator
@@ -46,6 +49,31 @@ app = FastAPI(
 )
 
 
+_SCRIPT_HASH_CACHE: dict[str, object] = {"mtime": None, "value": None}
+
+
+def _inline_script_hash() -> str | None:
+    index = Path(settings.web_dist_dir) / "index.html"
+    try:
+        mtime = index.stat().st_mtime
+    except OSError:
+        return None
+    if _SCRIPT_HASH_CACHE["mtime"] == mtime:
+        return _SCRIPT_HASH_CACHE["value"]  # type: ignore[return-value]
+    try:
+        html = index.read_text(encoding="utf-8")
+    except OSError:
+        return None
+    match = re.search(r'<script type="module">(.*?)</script>', html, re.S)
+    value = None
+    if match:
+        digest = hashlib.sha256(match.group(1).encode("utf-8")).digest()
+        value = "sha256-" + base64.b64encode(digest).decode("ascii")
+    _SCRIPT_HASH_CACHE["mtime"] = mtime
+    _SCRIPT_HASH_CACHE["value"] = value
+    return value
+
+
 @app.middleware("http")
 async def security_headers(request, call_next):
     response = await call_next(request)
@@ -53,10 +81,14 @@ async def security_headers(request, call_next):
     response.headers.setdefault("X-Frame-Options", "DENY")
     response.headers.setdefault("Referrer-Policy", "no-referrer")
     response.headers.setdefault("Permissions-Policy", "geolocation=(), microphone=(), camera=()")
+    script_src = "script-src 'self'"
+    script_hash = _inline_script_hash()
+    if script_hash:
+        script_src += f" '{script_hash}'"
     response.headers.setdefault(
         "Content-Security-Policy",
         "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; "
-        "script-src 'self'; connect-src 'self'; font-src 'self' data:; frame-ancestors 'none'",
+        f"{script_src}; connect-src 'self'; font-src 'self' data:; frame-ancestors 'none'",
     )
     if settings.is_production:
         response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
