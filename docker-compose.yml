@@ -15,6 +15,7 @@ services:
       WORKSPACE_DIR: /workspace
       WEB_DIST_DIR: /app/web/dist
       OLLAMA_BASE_URL: http://host.docker.internal:11434
+      TOOL_BASE_URL: http://127.0.0.1:8000
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:

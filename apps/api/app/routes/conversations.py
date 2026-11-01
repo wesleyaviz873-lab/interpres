@@ -60,6 +60,7 @@ def serialize_message(message: ConversationMessage) -> dict[str, object]:
         "content": message.content,
         "process": message.process,
         "question": _parse_question(message.question),
+        "image": message.image,
         "created_at": message.created_at.isoformat(),
     }
 

@@ -23,6 +23,7 @@ from .routes import (
     health,
     projects,
     providers,
+    screenshots,
     transcribe,
     tunnel,
     uploads,
@@ -109,6 +110,7 @@ app.include_router(conversations.router)
 app.include_router(projects.router)
 app.include_router(uploads.router)
 app.include_router(transcribe.router)
+app.include_router(screenshots.router)
 app.include_router(agents.router)
 app.include_router(tunnel.router)
 app.include_router(harnesses.router)

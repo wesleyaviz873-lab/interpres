@@ -159,6 +159,7 @@ export type ConversationMessageRow = {
   content: string
   process: string | null
   question: MessageQuestion | null
+  image: string | null
   created_at: string
 }
 
@@ -196,6 +197,11 @@ export type ChatJobResult = {
   harness: string | null
   conversation: ConversationSummary
   assistant_message_id: string
+}
+
+export type CaptureResponse = {
+  conversation: ConversationSummary
+  message: ConversationMessageRow
 }
 
 export type ChatJobStatus = {
@@ -555,6 +561,13 @@ export const api = {
         project_id: options.projectId ?? null,
         attachments: options.attachments ?? [],
       }),
+    })
+  },
+
+  captureScreenshot(conversationId?: string | null): Promise<CaptureResponse> {
+    return request<CaptureResponse>('/api/screenshots', {
+      method: 'POST',
+      body: JSON.stringify({ conversation_id: conversationId ?? null }),
     })
   },
 

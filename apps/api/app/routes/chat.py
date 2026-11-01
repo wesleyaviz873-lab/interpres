@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 import threading
+import uuid
 from collections.abc import Callable
 from pathlib import Path
 
@@ -15,10 +17,11 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .. import jobs
+from .. import jobs, tool_tokens
 from ..auth import require_csrf, require_user
 from ..database import SessionLocal, get_db
 from ..harnesses import HARNESSES, clean_output, is_installed, run_harness
+from ..screenshots import available as screenshots_available
 
 from ..config import settings
 from ..crypto import decrypt_secret
@@ -43,6 +46,23 @@ router = APIRouter(prefix="/api/chat", tags=["chat"])
 DEFAULT_TITLE = "Nova conversa"
 PROMPT_BUDGET = 12000
 
+_API_DIR = Path(__file__).resolve().parents[2]
+_REPO_DIR = _API_DIR.parent.parent
+_TOOL_PYTHON = _API_DIR / (".venv/Scripts/python.exe" if os.name == "nt" else ".venv/bin/python")
+_TOOL_SCRIPT = _REPO_DIR / "scripts" / "interpres_tool.py"
+TOOL_COMMAND = f'"{_TOOL_PYTHON}" "{_TOOL_SCRIPT}" screenshot'
+
+
+def _tool_hint() -> str:
+    if screenshots_available():
+        return (
+            "Para enviar um print da tela do computador ao usuário, rode exatamente: "
+            f"{TOOL_COMMAND} . A imagem aparece na conversa automaticamente; não abra "
+            "visualizador e não diga que não consegue antes de tentar."
+        )
+    return "Este servidor não tem interface gráfica; não prometa prints de tela."
+
+
 QUESTION_RE = re.compile(r"\[\[PERGUNTA\]\](.*?)\[\[/PERGUNTA\]\]", re.S)
 
 QUESTION_RULE = [
@@ -53,6 +73,67 @@ QUESTION_RULE = [
     "se puder inferir, não pergunte.",
 ]
 
+
+_IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
+_MD_IMAGE_RE = re.compile(r"!\[([^\]]*)\]\(([^)]+)\)")
+_WIN_IMAGE_RE = re.compile(
+    r"(?<![\w])([A-Za-z]:\\[^\s`'\"<>|]+?\.(?:png|jpe?g|webp|gif))", re.I
+)
+_POSIX_IMAGE_RE = re.compile(r"(/[\w./-]+?\.(?:png|jpe?g|webp|gif))", re.I)
+
+
+def _import_local_image(raw: str) -> str | None:
+    clean = raw.strip().strip("`'\"<>")
+    if clean.lower().startswith("file://"):
+        clean = clean[7:]
+    if clean.lower().startswith(("http://", "https://", "data:")):
+        return None
+    path = Path(clean)
+    if path.suffix.lower() not in _IMAGE_EXTENSIONS or not path.is_file():
+        return None
+    try:
+        if path.stat().st_size > 20 * 1024 * 1024:
+            return None
+        data = path.read_bytes()
+    except OSError:
+        return None
+    directory = settings.data_dir.resolve() / "screenshots"
+    directory.mkdir(parents=True, exist_ok=True)
+    name = f"{uuid.uuid4().hex}{path.suffix.lower()}"
+    (directory / name).write_bytes(data)
+    return f"/api/screenshots/{name}"
+
+
+def _ingest_local_images(reply: str) -> str:
+    imported: set[str] = set()
+
+    def markdown(match: re.Match[str]) -> str:
+        target = match.group(2)
+        url = _import_local_image(target)
+        if not url:
+            return match.group(0)
+        imported.add(target)
+        return f"![{match.group(1)}]({url})"
+
+    reply = _MD_IMAGE_RE.sub(markdown, reply)
+
+    extras: list[str] = []
+    for pattern in (_WIN_IMAGE_RE, _POSIX_IMAGE_RE):
+        for match in pattern.finditer(reply):
+            raw = match.group(1)
+            if raw in imported:
+                continue
+            url = _import_local_image(raw)
+            if url:
+                imported.add(raw)
+                extras.append(f"![Print da tela]({url})")
+                if len(extras) >= 2:
+                    break
+        if len(extras) >= 2:
+            break
+    if extras:
+        reply = reply.rstrip() + "\n\n" + "\n\n".join(extras)
+    return reply
 
 def _parse_question(text: str) -> tuple[str, dict[str, object] | None]:
     match = QUESTION_RE.search(text)
@@ -209,6 +290,7 @@ def _harness_prompt(
         lines.append("Arquivos enviados pelo usuário (caminhos reais, abra com as ferramentas):")
         for name, path, mime in attachments:
             lines.append(f"- {name} ({mime}): {path}")
+    lines.append(_tool_hint())
     lines.extend(QUESTION_RULE)
     return "\n".join(lines)
 
@@ -229,6 +311,7 @@ def _followup_prompt(
         lines.append("Arquivos enviados pelo usuário (caminhos reais):")
         for name, path, mime in attachments:
             lines.append(f"- {name} ({mime}): {path}")
+    lines.append(_tool_hint())
     lines.extend(QUESTION_RULE)
     return "\n".join(lines)
 
@@ -335,11 +418,16 @@ def _execute_chat(
     on_line: Callable[[str], None] | None = None,
 ) -> tuple[str, str, dict[str, object] | None, ConversationMessage]:
     if harness_id:
+        tool_env = _provider_env(db)
+        tool_env["INTERPRES_TOOL_URL"] = settings.tool_base_url
+        tool_env["INTERPRES_TOOL_TOKEN"] = tool_tokens.create(
+            conversation.id, conversation.user_id
+        )
         reply, session, process = _run_harness(
             db,
             conversation,
             harness_id,
-            _provider_env(db),
+            tool_env,
             attachments,
             on_line,
         )
@@ -365,6 +453,7 @@ def _execute_chat(
             ) from exc
 
     reply, question = _parse_question(reply)
+    reply = _ingest_local_images(reply)
 
     assistant_message = ConversationMessage(
         conversation_id=conversation.id,

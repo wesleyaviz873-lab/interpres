@@ -57,6 +57,10 @@ o código, rode as migrações (`alembic upgrade head`) e refaça `npm run build
 **O que é `.interpres/uploads`?**
 A pasta onde os anexos enviados no chat são salvos dentro do projeto.
 
+**Dá para receber print da tela?**
+Sim, no modo local com interface gráfica: use o botão de câmera no topo ou peça em texto. Em
+servidor/VPS sem desktop, não há tela para capturar.
+
 **Posso usar outra porta?**
 Sim: `--port 8010` no uvicorn ou `INTERPRES_PORT` no Docker.
 

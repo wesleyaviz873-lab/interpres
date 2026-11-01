@@ -64,6 +64,7 @@ inside itself — by design.
 - Conversations and messages persisted and restored when the app reopens.
 - Markdown replies with clickable links, lists, tables and code blocks.
 - Images and files (up to 25 MB) handed to the harness.
+- Screen captures sent into the conversation with the camera button or when you ask the agent (requires a desktop).
 - Model picker grouped by provider, with a sticky provider header.
 
 ### Projects

@@ -14,6 +14,7 @@ import { QuestionCard } from '../components/QuestionCard'
 import { SettingsModal, type SettingsSection } from '../components/SettingsModal'
 import { Toast, useToast } from '../components/Toast'
 import {
+  Camera,
   Chat,
   Check,
   Copy,
@@ -81,6 +82,7 @@ type Message = {
   content: string
   process?: string | null
   question?: MessageQuestion | null
+  image?: string | null
 }
 
 const MODEL_KEY = 'interpres_model'
@@ -285,6 +287,7 @@ export function AppShell({ user, onUserChange, onLogout, onSessionEnded }: AppSh
   )
   const [speakingId, setSpeakingId] = useState<string | null>(null)
   const [job, setJob] = useState<{ id: string; log: string[]; status: string } | null>(null)
+  const [capturing, setCapturing] = useState(false)
   const [autoScroll, setAutoScroll] = useState(true)
   const [ttsEnabled, setTtsEnabled] = useState(() => loadVoice().tts !== 'none')
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -389,6 +392,7 @@ export function AppShell({ user, onUserChange, onLogout, onSessionEnded }: AppSh
             content: message.content,
             process: message.process,
             question: message.question,
+            image: message.image,
           })),
       )
       if (result.conversation.project_id) {
@@ -794,6 +798,25 @@ export function AppShell({ user, onUserChange, onLogout, onSessionEnded }: AppSh
     }
   }
 
+  async function captureScreen() {
+    if (capturing) return
+    setCapturing(true)
+    try {
+      const result = await api.captureScreenshot(activeId)
+      await refreshConversations()
+      setActiveId(result.conversation.id)
+      localStorage.setItem(CONVERSATION_KEY, result.conversation.id)
+      await openConversation(result.conversation.id)
+      showToast('Print enviado para a conversa')
+    } catch (error) {
+      showToast(
+        error instanceof Error ? error.message : 'Não consegui capturar a tela.',
+        'error',
+      )
+    } finally {
+      setCapturing(false)
+    }
+  }
   async function followJob(jobId: string, conversationId: string) {
     const startedAt = Date.now()
     localStorage.setItem('interpres_job', JSON.stringify({ id: jobId, conversationId }))
@@ -1047,6 +1070,18 @@ export function AppShell({ user, onUserChange, onLogout, onSessionEnded }: AppSh
                 <Speaker className="h-4 w-4" />
               </button>
             ) : null}
+            <button
+              type="button"
+              onClick={() => {
+                void captureScreen()
+              }}
+              disabled={capturing}
+              title="Capturar e enviar um print da tela"
+              aria-label="Capturar e enviar um print da tela"
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-line text-muted transition-colors hover:border-white/20 hover:text-paper disabled:opacity-50"
+            >
+              <Camera className="h-4 w-4" />
+            </button>
             {activeProject ? (
               <span
                 className="hidden max-w-[200px] items-center gap-1.5 truncate rounded-lg border border-line px-2 py-1 text-[10.5px] text-muted sm:flex"
@@ -1106,6 +1141,15 @@ export function AppShell({ user, onUserChange, onLogout, onSessionEnded }: AppSh
                   >
                     {message.content ? <MarkdownMessage content={message.content} /> : null}
 
+                    {message.image ? (
+                      <img
+                        src={message.image}
+                        alt="Print da tela"
+                        onClick={() => window.open(message.image ?? '', '_blank', 'noopener')}
+                        className="mt-2 max-h-80 w-auto cursor-zoom-in rounded-lg border border-line"
+                      />
+                    ) : null}
+
                     {message.question ? (
                       <QuestionCard
                         question={message.question}
@@ -1124,7 +1168,7 @@ export function AppShell({ user, onUserChange, onLogout, onSessionEnded }: AppSh
 
                     {message.process ? <ProcessBlock raw={message.process} /> : null}
 
-                    {message.content || message.question ? (
+                    {message.content || message.question || message.image ? (
                       <div className="mt-1 flex flex-wrap items-center gap-1 opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100">
                         {message.content ? (
                           <button

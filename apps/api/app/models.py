@@ -187,6 +187,7 @@ class ConversationMessage(Base):
     content: Mapped[str] = mapped_column(Text, nullable=False)
     process: Mapped[str | None] = mapped_column(Text, nullable=True)
     question: Mapped[str | None] = mapped_column(Text, nullable=True)
+    image: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
 
     conversation: Mapped[Conversation] = relationship(back_populates="messages")

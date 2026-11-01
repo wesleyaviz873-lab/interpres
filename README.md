@@ -64,6 +64,7 @@ fica dentro dele — e isso é proposital.
 - Conversas e mensagens persistidas e retomadas ao abrir o app.
 - Respostas em Markdown, com links clicáveis, listas, tabelas e blocos de código.
 - Imagens e arquivos anexados (até 25 MB) são entregues ao harness.
+- Print da tela enviado na conversa pelo botão de câmera ou quando você pede à IA (precisa de interface gráfica).
 - Seletor de modelo agrupado por provedor, com o nome do provedor fixo no topo.
 
 ### Projetos

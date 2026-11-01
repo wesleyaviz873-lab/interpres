@@ -70,6 +70,16 @@ objetivo é economizar, use o harness cujo provedor você já paga.
 - No OpenCode vão por `--file`; no Codex e Hermes, imagens por `--image`.
 - O caminho real é informado no prompt, então o agente pode abrir o arquivo.
 
+## Print da tela
+
+- Clique no ícone de câmera no topo do chat para capturar a tela do computador e enviar na conversa.
+- Ou peça em texto: "me manda um print da tela". O agente captura, informa o caminho e o Interpres
+  transforma o arquivo em imagem dentro da conversa.
+- A imagem é aberta em tamanho grande ao clicar.
+- Só funciona se o computador tiver sessão gráfica. Em VPS/servidor sem interface, o Interpres
+  responde que não há tela disponível.
+
+
 ## O que evitar
 
 - Apontar o projeto para `C:\` ou para a pasta do usuário inteira.
