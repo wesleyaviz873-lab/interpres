@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy import select
@@ -41,12 +43,23 @@ def serialize(conversation: Conversation, message_count: int = 0) -> dict[str, o
     }
 
 
+def _parse_question(raw: str | None) -> dict[str, object] | None:
+    if not raw:
+        return None
+    try:
+        data = json.loads(raw)
+    except ValueError:
+        return None
+    return data if isinstance(data, dict) else None
+
+
 def serialize_message(message: ConversationMessage) -> dict[str, object]:
     return {
         "id": message.id,
         "role": message.role,
         "content": message.content,
         "process": message.process,
+        "question": _parse_question(message.question),
         "created_at": message.created_at.isoformat(),
     }
 

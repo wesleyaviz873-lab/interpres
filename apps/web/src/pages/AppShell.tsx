@@ -9,11 +9,13 @@ import {
 } from 'react'
 import { Button } from '../components/Button'
 import { MarkdownMessage } from '../components/MarkdownMessage'
+import { QuestionCard } from '../components/QuestionCard'
 import { SettingsModal, type SettingsSection } from '../components/SettingsModal'
 import { Toast, useToast } from '../components/Toast'
 import {
   Chat,
   Check,
+  Copy,
   ChevronDown,
   Folder,
   Key,
@@ -30,6 +32,7 @@ import {
 import {
   api,
   type ConversationSummary,
+  type MessageQuestion,
   type OpenCodeModel,
   type ProjectInfo,
   type ProviderInfo,
@@ -73,6 +76,7 @@ type Message = {
   role: 'user' | 'assistant'
   content: string
   process?: string | null
+  question?: MessageQuestion | null
 }
 
 const MODEL_KEY = 'interpres_model'
@@ -366,6 +370,7 @@ export function AppShell({ user, onUserChange, onLogout, onSessionEnded }: AppSh
             role: message.role as 'user' | 'assistant',
             content: message.content,
             process: message.process,
+            question: message.question,
           })),
       )
       if (result.conversation.project_id) {
@@ -639,9 +644,10 @@ export function AppShell({ user, onUserChange, onLogout, onSessionEnded }: AppSh
     }
   }
 
-  async function handleSend(event?: FormEvent<HTMLFormElement>) {
+  async function handleSend(event?: FormEvent<HTMLFormElement>, override?: string) {
     event?.preventDefault()
-    const texto = draft.trim()
+    const usingOverride = typeof override === 'string'
+    const texto = (override ?? draft).trim()
     if ((!texto && files.length === 0) || sending) return
 
     if (!hasProvider && !harness) {
@@ -654,7 +660,7 @@ export function AppShell({ user, onUserChange, onLogout, onSessionEnded }: AppSh
       return
     }
 
-    const anexos = files.map((item) => item.file.name)
+    const anexos = usingOverride ? [] : files.map((item) => item.file.name)
     const conteudo = [texto, anexos.length ? `[Anexos: ${anexos.join(', ')}]` : '']
       .filter(Boolean)
       .join('\n')
@@ -664,11 +670,13 @@ export function AppShell({ user, onUserChange, onLogout, onSessionEnded }: AppSh
       content: conteudo,
     }
     const historico = [...messages, mensagemUsuario]
-    const anexosParaEnviar = files.map((item) => item.file)
+    const anexosParaEnviar = usingOverride ? [] : files.map((item) => item.file)
 
     setMessages(historico)
-    setDraft('')
-    clearFiles()
+    if (!usingOverride) {
+      setDraft('')
+      clearFiles()
+    }
 
     setSending(true)
 
@@ -697,6 +705,7 @@ export function AppShell({ user, onUserChange, onLogout, onSessionEnded }: AppSh
           role: 'assistant',
           content: resposta.reply,
           process: resposta.process,
+          question: resposta.question,
         },
       ])
       setActiveId(resposta.conversation.id)
@@ -854,7 +863,7 @@ export function AppShell({ user, onUserChange, onLogout, onSessionEnded }: AppSh
                 </div>
               </div>
 
-              {messages.map((message) =>
+              {messages.map((message, index) =>
                 message.role === 'user' ? (
                   <div key={message.id} className="flex justify-end">
                     <div className="max-w-[min(560px,85%)] whitespace-pre-wrap rounded-2xl rounded-tr-md border border-accent/25 bg-accent/15 px-3.5 py-2.5 text-[12.5px] leading-5 text-paper">
@@ -862,17 +871,57 @@ export function AppShell({ user, onUserChange, onLogout, onSessionEnded }: AppSh
                     </div>
                   </div>
                 ) : (
-                  <div key={message.id} className="min-w-0 max-w-full break-words px-1 text-[13px] leading-6 text-paper/90">
-                    <MarkdownMessage content={message.content} />
+                  <div
+                    key={message.id}
+                    className="group min-w-0 max-w-full break-words px-1 text-[13px] leading-6 text-paper/90"
+                  >
+                    {message.content ? <MarkdownMessage content={message.content} /> : null}
+
+                    {message.question ? (
+                      <QuestionCard
+                        question={message.question}
+                        answered={messages
+                          .slice(index + 1)
+                          .some((next) => next.role === 'user')}
+                        disabled={sending}
+                        onAnswer={(answer) =>
+                          void handleSend(
+                            undefined,
+                            `Resposta à pergunta "${message.question?.question}": ${answer}`,
+                          )
+                        }
+                      />
+                    ) : null}
+
                     {message.process ? (
                       <details className="mt-2 rounded-lg border border-line/70 bg-ink/40 px-2.5 py-1.5">
-                        <summary className="cursor-pointer select-none text-[10.5px] font-medium text-muted transition-colors hover:text-paper">
-                          Ver processo
+                        <summary className="flex cursor-pointer select-none items-center gap-1 text-[10.5px] font-medium text-muted transition-colors hover:text-paper">
+                          <ChevronDown className="chevron h-3 w-3 shrink-0 transition-transform" />
+                          <span className="process-closed">Ver processo</span>
+                          <span className="process-open">Ocultar processo</span>
                         </summary>
                         <pre className="mt-1.5 max-h-56 overflow-auto whitespace-pre-wrap break-words font-mono text-[10px] leading-4 text-muted">
                           {message.process}
                         </pre>
                       </details>
+                    ) : null}
+
+                    {message.content ? (
+                      <div className="mt-1 flex items-center gap-1 opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            void navigator.clipboard
+                              .writeText(message.content)
+                              .then(() => showToast('Resposta copiada'))
+                              .catch(() => showToast('Não consegui copiar', 'error'))
+                          }}
+                          className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[10.5px] text-muted transition-colors hover:bg-white/5 hover:text-paper"
+                        >
+                          <Copy className="h-3 w-3" />
+                          Copiar
+                        </button>
+                      </div>
                     ) : null}
                   </div>
                 ),

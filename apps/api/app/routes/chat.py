@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 import logging
+import re
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -35,6 +37,38 @@ router = APIRouter(prefix="/api/chat", tags=["chat"])
 
 DEFAULT_TITLE = "Nova conversa"
 PROMPT_BUDGET = 12000
+
+QUESTION_RE = re.compile(r"\[\[PERGUNTA\]\](.*?)\[\[/PERGUNTA\]\]", re.S)
+
+QUESTION_RULE = [
+    "Se (e só se) faltar uma decisão que só o usuário pode tomar, termine com UMA pergunta no formato exato:",
+    '[[PERGUNTA]]{"question":"...","options":["...","..."]}[[/PERGUNTA]]',
+    "Regras: no máximo 1 pergunta por resposta; 2 a 4 opções curtas ou nenhuma; "
+    "nunca peça confirmação de um pedido claro; nunca repita pergunta já respondida; "
+    "se puder inferir, não pergunte.",
+]
+
+
+def _parse_question(text: str) -> tuple[str, dict[str, object] | None]:
+    match = QUESTION_RE.search(text)
+    if not match:
+        return text.strip(), None
+    cleaned = (text[: match.start()] + text[match.end() :]).strip()
+    try:
+        data = json.loads(match.group(1).strip())
+    except ValueError:
+        return cleaned, None
+    if not isinstance(data, dict):
+        return cleaned, None
+    question = data.get("question")
+    if not isinstance(question, str) or not question.strip():
+        return cleaned, None
+    raw_options = data.get("options")
+    options: list[str] = []
+    if isinstance(raw_options, list):
+        options = [str(item).strip()[:120] for item in raw_options if str(item).strip()][:4]
+    return cleaned, {"question": question.strip()[:500], "options": options}
+
 
 
 class ChatMessageIn(BaseModel):
@@ -160,8 +194,8 @@ def _harness_prompt(
         "arquivos e executar comandos."
     )
     lines.append(
-        "Execute o pedido agora com suas ferramentas. Não faça perguntas de "
-        "esclarecimento: se faltar o nome do arquivo, escolha um nome curto e óbvio."
+        "Execute o pedido agora com suas ferramentas. Não peça confirmação de pedidos "
+        "claros; se faltar o nome do arquivo, escolha um nome curto e óbvio."
     )
     lines.append("Responda em português do Brasil, de forma direta e curta.")
 
@@ -170,6 +204,7 @@ def _harness_prompt(
         lines.append("Arquivos enviados pelo usuário (caminhos reais, abra com as ferramentas):")
         for name, path, mime in attachments:
             lines.append(f"- {name} ({mime}): {path}")
+    lines.extend(QUESTION_RULE)
     return "\n".join(lines)
 
 
@@ -189,6 +224,7 @@ def _followup_prompt(
         lines.append("Arquivos enviados pelo usuário (caminhos reais):")
         for name, path, mime in attachments:
             lines.append(f"- {name} ({mime}): {path}")
+    lines.extend(QUESTION_RULE)
     return "\n".join(lines)
 
 
@@ -355,6 +391,7 @@ def chat(
             for message in conversation.messages
             if message.role in {"system", "user", "assistant"}
         ]
+        historico.insert(0, ChatMessage(role="system", content="\n".join(QUESTION_RULE)))
         try:
             reply = OpenCodeProvider(api_key).chat(historico, body.model)
         except ProviderError as exc:
@@ -364,11 +401,14 @@ def chat(
                 status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)
             ) from exc
 
+    reply, question = _parse_question(reply)
+
     assistant_message = ConversationMessage(
         conversation_id=conversation.id,
         role="assistant",
         content=reply,
         process=process or None,
+        question=json.dumps(question, ensure_ascii=False) if question else None,
     )
     db.add(assistant_message)
     conversation.updated_at = utcnow()
@@ -378,6 +418,7 @@ def chat(
     return {
         "reply": reply,
         "process": assistant_message.process,
+        "question": question,
         "harness": harness_id,
         "conversation": serialize_conversation(conversation, len(conversation.messages)),
         "user_message_id": user_message.id,

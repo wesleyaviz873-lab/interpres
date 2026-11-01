@@ -387,3 +387,56 @@ def test_harness_session_is_reused_and_stored(client: TestClient, monkeypatch) -
     assert calls[1]["session"] == "sess-1"
     assert calls[1]["prompt"].startswith("e agora?")
     assert "PEDIDO DO USUÁRIO" not in calls[1]["prompt"]
+
+
+def test_parse_question_marker() -> None:
+    from app.routes.chat import _parse_question
+
+    content, question = _parse_question(
+        'Preciso de uma decisão.\n'
+        '[[PERGUNTA]]{"question":"Qual banco?","options":["SQLite","Postgres"]}[[/PERGUNTA]]'
+    )
+    assert content == "Preciso de uma decisão."
+    assert question == {"question": "Qual banco?", "options": ["SQLite", "Postgres"]}
+
+    plain, none = _parse_question("Sem pergunta")
+    assert plain == "Sem pergunta"
+    assert none is None
+
+    _, invalid = _parse_question("[[PERGUNTA]]nao e json[[/PERGUNTA]]")
+    assert invalid is None
+
+
+def test_chat_stores_question_card(client: TestClient, monkeypatch) -> None:
+    _setup(client)
+    headers = _headers(client)
+    monkeypatch.setattr(chat_routes, "selected_harness", lambda _db: "opencode")
+
+    def fake_run(harness_id, prompt, cwd, extra_env=None, timeout=600, files=None, session=None):
+        return {
+            "ok": True,
+            "exit_code": 0,
+            "stdout": 'Qual opção?[[PERGUNTA]]{"question":"Qual opção?","options":["A","B"]}[[/PERGUNTA]]',
+            "stderr": "",
+            "session": "",
+        }
+
+    monkeypatch.setattr(chat_routes, "run_harness", fake_run)
+
+    response = client.post(
+        "/api/chat",
+        headers=headers,
+        json={
+            "provider": "opencode",
+            "model": "deepseek-v4.1-flash",
+            "messages": [{"role": "user", "content": "preciso escolher"}],
+        },
+    )
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["question"] == {"question": "Qual opção?", "options": ["A", "B"]}
+    assert payload["reply"] == "Qual opção?"
+
+    read = client.get(f"/api/conversations/{payload['conversation']['id']}").json()
+    assistant = read["messages"][-1]
+    assert assistant["question"] == {"question": "Qual opção?", "options": ["A", "B"]}

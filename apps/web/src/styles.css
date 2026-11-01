@@ -55,3 +55,19 @@ html[data-animations='off'] *::after {
   animation: none !important;
   transition: none !important;
 }
+
+.process-open {
+  display: none;
+}
+
+details[open] .process-open {
+  display: inline;
+}
+
+details[open] .process-closed {
+  display: none;
+}
+
+details[open] .chevron {
+  transform: rotate(180deg);
+}

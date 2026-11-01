@@ -148,11 +148,17 @@ export type ConversationSummary = {
   updated_at: string
 }
 
+export type MessageQuestion = {
+  question: string
+  options: string[]
+}
+
 export type ConversationMessageRow = {
   id: string
   role: string
   content: string
   process: string | null
+  question: MessageQuestion | null
   created_at: string
 }
 
@@ -180,6 +186,7 @@ export type UploadResponse = ChatAttachment & {
 export type ChatResponse = {
   reply: string
   process: string | null
+  question: MessageQuestion | null
   harness: string | null
   conversation: ConversationSummary
   user_message_id: string
