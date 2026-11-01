@@ -7,7 +7,7 @@ Workspace de IA auto-hospedado: **suas chaves, seus modelos, seus arquivos, sua 
 **Português** · [English](README.en.md)
 
 > **Status: versão local funcional (v0.2).** Conta do dono, chaves cifradas,
-> conversas persistidas, projetos, anexos, busca em conversas antigas e harnesses
+> conversas persistidas, projetos, anexos e harnesses
 > de código reais funcionando. Streaming de jobs, aprovações e agente local vêm
 > depois.
 
@@ -29,8 +29,6 @@ Você escolhe o **harness** (o agente que roda de verdade na sua máquina) e o
   projeto que você escolhe.
 - Usar o mesmo app com OpenCode, Claude Code, Codex, Gemini ou Hermes — e trocar
   quando quiser.
-- Consultar conversas antigas quando precisar de contexto, pagando quase nada
-  por isso.
 - Deixar tudo acessível no celular por um túnel (Cloudflare ou ngrok), sem abrir
   portas no roteador.
 
@@ -66,7 +64,6 @@ fica dentro dele — e isso é proposital.
 - Conversas e mensagens persistidas e retomadas ao abrir o app.
 - Respostas em Markdown, com links clicáveis, listas, tabelas e blocos de código.
 - Imagens e arquivos anexados (até 25 MB) são entregues ao harness.
-- Busca local nas conversas antigas; só o trecho escolhido entra no próximo pedido.
 - Seletor de modelo agrupado por provedor, com o nome do provedor fixo no topo.
 
 ### Projetos

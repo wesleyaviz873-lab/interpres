@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import tempfile
 from pathlib import Path
@@ -346,35 +346,6 @@ def test_upload_rejects_foreign_paths(client: TestClient, monkeypatch) -> None:
 
 
 
-def test_search_finds_past_messages(client: TestClient) -> None:
-    _setup(client)
-    headers = _headers(client)
-
-    created = client.post("/api/conversations", headers=headers, json={}).json()
-    db = SessionLocal()
-    try:
-        db.add(
-            ConversationMessage(
-                conversation_id=created["id"],
-                role="user",
-                content="o deploy do servidor argenda usa docker compose",
-            )
-        )
-        db.commit()
-    finally:
-        db.close()
-
-    found = client.get("/api/conversations/search", params={"q": "argenda"})
-    assert found.status_code == 200, found.text
-    results = found.json()["results"]
-    assert len(results) == 1
-    assert results[0]["conversation_id"] == created["id"]
-    assert "argenda" in results[0]["snippet"]
-
-    assert client.get("/api/conversations/search", params={"q": "x"}).status_code == 422
-    assert client.get("/api/conversations/search", params={"q": "inexistente"}).json()["results"] == []
-
-
 def test_harness_session_is_reused_and_stored(client: TestClient, monkeypatch) -> None:
     _setup(client)
     headers = _headers(client)
@@ -395,14 +366,12 @@ def test_harness_session_is_reused_and_stored(client: TestClient, monkeypatch) -
             "provider": "opencode",
             "model": "deepseek-v4.1-flash",
             "messages": [{"role": "user", "content": "liste as pastas"}],
-            "recall": ["trecho antigo sobre deploy"],
         },
     )
     assert first.status_code == 200, first.text
     conversation_id = first.json()["conversation"]["id"]
     assert calls[0]["session"] is None
     assert calls[0]["prompt"].startswith("PEDIDO DO USUÁRIO")
-    assert "trecho antigo sobre deploy" in calls[0]["prompt"]
 
     second = client.post(
         "/api/chat",

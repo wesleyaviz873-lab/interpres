@@ -7,7 +7,7 @@ Self-hosted AI workspace: **your keys, your models, your files, your machine**.
 [Português](README.md) · **English**
 
 > **Status: working local build (v0.2).** Owner account, encrypted provider keys,
-> persisted conversations, projects, attachments, local conversation search and
+> persisted conversations, projects, attachments and
 > real coding harnesses are running. Streaming jobs, approvals and the local agent
 > come next.
 
@@ -29,7 +29,6 @@ off your machine.
 - Ask an agent to **create, edit and delete files** inside a project folder you choose.
 - Use the same app with OpenCode, Claude Code, Codex, Gemini or Hermes — and switch
   whenever you want.
-- Recall older conversations when you need context, at almost no token cost.
 - Reach it from your phone through a tunnel (Cloudflare or ngrok) without opening
   router ports.
 
@@ -65,7 +64,6 @@ inside itself — by design.
 - Conversations and messages persisted and restored when the app reopens.
 - Markdown replies with clickable links, lists, tables and code blocks.
 - Images and files (up to 25 MB) handed to the harness.
-- Local search over past conversations; only the chosen snippet goes into the next prompt.
 - Model picker grouped by provider, with a sticky provider header.
 
 ### Projects

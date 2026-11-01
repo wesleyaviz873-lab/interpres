@@ -9,13 +9,11 @@ import {
 } from 'react'
 import { Button } from '../components/Button'
 import { MarkdownMessage } from '../components/MarkdownMessage'
-import { RecallDialog } from '../components/RecallDialog'
 import { SettingsModal, type SettingsSection } from '../components/SettingsModal'
 import { Toast, useToast } from '../components/Toast'
 import {
   Chat,
   Check,
-  Database,
   ChevronDown,
   Folder,
   Key,
@@ -268,8 +266,6 @@ export function AppShell({ user, onUserChange, onLogout, onSessionEnded }: AppSh
   const [activeId, setActiveId] = useState<string | null>(null)
   const [draft, setDraft] = useState('')
   const [files, setFiles] = useState<Attachment[]>([])
-  const [recallItems, setRecallItems] = useState<Array<{ title: string; text: string }>>([])
-  const [recallOpen, setRecallOpen] = useState(false)
   const [messages, setMessages] = useState<Message[]>([])
   const [sending, setSending] = useState(false)
   const [elapsed, setElapsed] = useState(0)
@@ -458,6 +454,23 @@ export function AppShell({ user, onUserChange, onLogout, onSessionEnded }: AppSh
     return () => window.clearInterval(timer)
   }, [sending])
 
+  useEffect(() => {
+    const viewport = window.visualViewport
+    if (!viewport) return
+    const vv = viewport
+    function applyHeight() {
+      document.documentElement.style.setProperty('--app-height', `${vv.height}px`)
+    }
+    applyHeight()
+    vv.addEventListener('resize', applyHeight)
+    vv.addEventListener('scroll', applyHeight)
+    return () => {
+      vv.removeEventListener('resize', applyHeight)
+      vv.removeEventListener('scroll', applyHeight)
+      document.documentElement.style.removeProperty('--app-height')
+    }
+  }, [])
+
   function clearFiles() {
     setFiles((current) => {
       current.forEach((item) => {
@@ -471,7 +484,7 @@ export function AppShell({ user, onUserChange, onLogout, onSessionEnded }: AppSh
     setSidebarOpen(false)
     setDraft('')
     clearFiles()
-    setRecallItems([])
+
     setMessages([])
     setActiveId(null)
     localStorage.removeItem(CONVERSATION_KEY)
@@ -642,11 +655,11 @@ export function AppShell({ user, onUserChange, onLogout, onSessionEnded }: AppSh
     }
     const historico = [...messages, mensagemUsuario]
     const anexosParaEnviar = files.map((item) => item.file)
-    const recallParaEnviar = recallItems.map((item) => `${item.title}: ${item.text}`)
+
     setMessages(historico)
     setDraft('')
     clearFiles()
-    setRecallItems([])
+
     setSending(true)
 
     const [provider, ...resto] = (selectedModel?.id ?? 'opencode:auto').split(':')
@@ -664,7 +677,7 @@ export function AppShell({ user, onUserChange, onLogout, onSessionEnded }: AppSh
           conversationId: activeId,
           projectId: activeProjectId,
           attachments: uploaded.map(({ name, path, mime }) => ({ name, path, mime })),
-          recall: recallParaEnviar,
+
         },
       )
       setMessages([
@@ -695,8 +708,8 @@ export function AppShell({ user, onUserChange, onLogout, onSessionEnded }: AppSh
   }
 
   return (
-    <div className="flex h-dvh overflow-hidden bg-ink">
-      <aside className="hidden h-dvh w-64 shrink-0 flex-col border-r border-line bg-panel/60 lg:flex">
+    <div className="flex overflow-hidden bg-ink" style={{ height: 'var(--app-height, 100dvh)' }}>
+      <aside className="hidden h-full w-64 shrink-0 flex-col border-r border-line bg-panel/60 lg:flex">
         <SidebarContent
           user={user}
           conversations={conversations}
@@ -887,7 +900,7 @@ export function AppShell({ user, onUserChange, onLogout, onSessionEnded }: AppSh
             </div>
           </div>
 
-          <div className="shrink-0 border-t border-line px-4 py-3">
+          <div className="shrink-0 border-t border-line px-2.5 py-2.5 pb-[calc(0.625rem+env(safe-area-inset-bottom))] sm:px-4 sm:py-3">
             <form className="mx-auto w-full max-w-3xl" onSubmit={handleSend}>
               <div className="rounded-2xl border border-line bg-panel px-2.5 pb-2 pt-1.5 transition-colors focus-within:border-white/20">
                 {files.length > 0 ? (
@@ -937,32 +950,6 @@ export function AppShell({ user, onUserChange, onLogout, onSessionEnded }: AppSh
                   </div>
                 ) : null}
 
-                {recallItems.length > 0 ? (
-                  <div className="flex flex-wrap gap-1.5 px-1.5 pb-1.5">
-                    {recallItems.map((item, index) => (
-                      <span
-                        key={`${item.title}-${index}`}
-                        className="inline-flex max-w-full items-center gap-1.5 rounded-lg border border-accent/25 bg-accent/10 px-2 py-1 text-[10.5px] leading-4 text-paper/85"
-                        title={item.text}
-                      >
-                        <Database className="h-3 w-3 shrink-0 text-accent" />
-                        <span className="max-w-[170px] truncate">{item.title}</span>
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setRecallItems((current) =>
-                              current.filter((_, itemIndex) => itemIndex !== index),
-                            )
-                          }
-                          aria-label={`Remover contexto de ${item.title}`}
-                          className="rounded p-0.5 text-muted hover:bg-white/5 hover:text-paper"
-                        >
-                          <X className="h-3 w-3" />
-                        </button>
-                      </span>
-                    ))}
-                  </div>
-                ) : null}
 
                 <textarea
                   value={draft}
@@ -979,8 +966,8 @@ export function AppShell({ user, onUserChange, onLogout, onSessionEnded }: AppSh
                   className="max-h-32 min-h-[26px] w-full resize-none bg-transparent px-1.5 py-1 text-[13px] leading-5 text-paper placeholder:text-muted/60 focus:outline-none"
                 />
 
-                <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
-                  <div className="relative min-w-0 max-w-[60%]">
+                <div className="mt-0.5 flex flex-nowrap items-center gap-1">
+                  <div className="relative min-w-0 flex-1 sm:max-w-[15rem]">
                     <button
                       type="button"
                       onClick={() => {
@@ -993,13 +980,13 @@ export function AppShell({ user, onUserChange, onLogout, onSessionEnded }: AppSh
                       }}
                       aria-haspopup="listbox"
                       aria-expanded={modelOpen}
-                      className="inline-flex max-w-full items-center gap-1.5 rounded-lg border border-line bg-ink/60 px-2 py-1.5 text-[11px] font-medium text-paper/90 transition-colors hover:border-white/20"
+                      className="inline-flex max-w-full items-center gap-1 rounded-lg border border-line bg-ink/60 px-1.5 py-1 text-[10.5px] font-medium text-paper/90 transition-colors hover:border-white/20 sm:gap-1.5 sm:px-2 sm:py-1.5 sm:text-[11px]"
                     >
                       <span className="truncate">
                         {selectedModel?.label ?? (hasProvider ? 'Selecionar modelo' : 'Sem modelo')}
                       </span>
                       {selectedModel ? (
-                        <span className="rounded bg-accent/15 px-1 py-0.5 text-[9px] font-semibold leading-3 text-accent">
+                        <span className="hidden rounded bg-accent/15 px-1 py-0.5 text-[9px] font-semibold leading-3 text-accent sm:inline">
                           {selectedModel.badge}
                         </span>
                       ) : null}
@@ -1066,7 +1053,7 @@ export function AppShell({ user, onUserChange, onLogout, onSessionEnded }: AppSh
                     ) : null}
                   </div>
 
-                  <div className="relative min-w-0 max-w-[40%]">
+                  <div className="relative min-w-0 flex-1 sm:max-w-[12rem]">
                     <button
                       type="button"
                       onClick={() => {
@@ -1076,7 +1063,7 @@ export function AppShell({ user, onUserChange, onLogout, onSessionEnded }: AppSh
                       aria-haspopup="listbox"
                       aria-expanded={projectOpen}
                       title={activeProject?.path ?? 'Escolha a pasta do projeto'}
-                      className={`inline-flex max-w-full items-center gap-1.5 rounded-lg border px-2 py-1.5 text-[11px] font-medium transition-colors ${
+                      className={`inline-flex max-w-full items-center gap-1 rounded-lg border px-1.5 py-1 text-[10.5px] font-medium transition-colors sm:gap-1.5 sm:px-2 sm:py-1.5 sm:text-[11px] ${
                         activeProject
                           ? 'border-accent/30 bg-accent/10 text-paper'
                           : 'border-line bg-ink/60 text-muted hover:border-white/20 hover:text-paper'
@@ -1097,7 +1084,7 @@ export function AppShell({ user, onUserChange, onLogout, onSessionEnded }: AppSh
                         />
                         <div
                           role="listbox"
-                          className="absolute bottom-full left-0 z-20 mb-1.5 w-[min(21rem,calc(100vw-2rem))] overflow-hidden rounded-xl border border-line bg-panel shadow-xl shadow-black/50"
+                          className="absolute bottom-full right-0 z-20 mb-1.5 w-[min(21rem,calc(100vw-2rem))] overflow-hidden rounded-xl border border-line bg-panel shadow-xl shadow-black/50"
                         >
                           <div className="flex items-center gap-2 border-b border-line/70 px-2.5 py-1.5">
                             <span className="text-[9.5px] font-semibold uppercase tracking-[0.14em] text-paper/80">
@@ -1198,7 +1185,7 @@ export function AppShell({ user, onUserChange, onLogout, onSessionEnded }: AppSh
                     ) : null}
                   </div>
 
-                  <div className="ml-auto flex items-center gap-0.5">
+                  <div className="ml-auto flex shrink-0 items-center gap-0">
                     <input
                       ref={fileInputRef}
                       type="file"
@@ -1207,15 +1194,6 @@ export function AppShell({ user, onUserChange, onLogout, onSessionEnded }: AppSh
                       className="hidden"
                       onChange={handleFiles}
                     />
-                    <button
-                      type="button"
-                      onClick={() => setRecallOpen(true)}
-                      aria-label="Consultar conversas anteriores"
-                      title="Consultar conversas anteriores (busca local)"
-                      className="flex h-8 w-8 items-center justify-center rounded-lg text-muted transition-colors hover:bg-white/5 hover:text-paper"
-                    >
-                      <Database className="h-4 w-4" />
-                    </button>
                     <button
                       type="button"
                       onClick={() => fileInputRef.current?.click()}
@@ -1269,19 +1247,6 @@ export function AppShell({ user, onUserChange, onLogout, onSessionEnded }: AppSh
         />
       ) : null}
 
-      {recallOpen ? (
-        <RecallDialog
-          onClose={() => setRecallOpen(false)}
-          onPick={(result) => {
-            setRecallItems((current) =>
-              current.some((item) => item.title === result.title)
-                ? current
-                : [...current, { title: result.title, text: result.snippet }].slice(0, 3),
-            )
-            setRecallOpen(false)
-          }}
-        />
-      ) : null}
 
       <Toast toast={toast} />
     </div>

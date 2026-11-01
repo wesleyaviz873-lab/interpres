@@ -55,7 +55,6 @@ class ChatRequest(BaseModel):
     conversation_id: str | None = Field(default=None, max_length=36)
     project_id: str | None = Field(default=None, max_length=36)
     attachments: list[ChatAttachmentIn] = Field(default_factory=list, max_length=10)
-    recall: list[str] = Field(default_factory=list, max_length=5)
 
 
 def _api_key(db: Session, provider: str) -> str:
@@ -137,22 +136,11 @@ def _harness_cwd(db: Session, conversation: Conversation) -> Path:
     return workspace
 
 
-def _recall_block(recall: list[str] | None) -> list[str]:
-    if not recall:
-        return []
-    lines = ["", "Trechos de conversas anteriores que o usuário pediu (use só se ajudar):"]
-    for item in recall:
-        text = " ".join(item.split())
-        if text:
-            lines.append(f"- {text[:1200]}")
-    return lines
-
 
 def _harness_prompt(
     conversation: Conversation,
     cwd: Path,
     attachments: list[tuple[str, str, str]] | None = None,
-    recall: list[str] | None = None,
 ) -> str:
     pedacos = [
         " ".join(message.content.split())
@@ -182,7 +170,6 @@ def _harness_prompt(
         lines.append("Arquivos enviados pelo usuário (caminhos reais, abra com as ferramentas):")
         for name, path, mime in attachments:
             lines.append(f"- {name} ({mime}): {path}")
-    lines.extend(_recall_block(recall))
     return "\n".join(lines)
 
 
@@ -190,7 +177,6 @@ def _followup_prompt(
     conversation: Conversation,
     cwd: Path,
     attachments: list[tuple[str, str, str]] | None = None,
-    recall: list[str] | None = None,
 ) -> str:
     """Short prompt for a harness session that already knows the history."""
     task = ""
@@ -203,7 +189,6 @@ def _followup_prompt(
         lines.append("Arquivos enviados pelo usuário (caminhos reais):")
         for name, path, mime in attachments:
             lines.append(f"- {name} ({mime}): {path}")
-    lines.extend(_recall_block(recall))
     return "\n".join(lines)
 
 
@@ -213,7 +198,6 @@ def _run_harness(
     harness_id: str,
     user_env: dict[str, str],
     attachments: list[tuple[str, str, str]] | None = None,
-    recall: list[str] | None = None,
 ) -> tuple[str, str]:
     cwd = _harness_cwd(db, conversation)
     session = conversation.harness_session if conversation.harness == harness_id else None
@@ -227,15 +211,15 @@ def _run_harness(
             files = [path for _name, path, _mime in attachments]
 
     prompt = (
-        _followup_prompt(conversation, cwd, attachments, recall)
+        _followup_prompt(conversation, cwd, attachments)
         if session
-        else _harness_prompt(conversation, cwd, attachments, recall)
+        else _harness_prompt(conversation, cwd, attachments)
     )
     result = run_harness(harness_id, prompt, cwd, user_env, files=files, session=session)
 
     if not result.get("ok") and session:
         session = None
-        prompt = _harness_prompt(conversation, cwd, attachments, recall)
+        prompt = _harness_prompt(conversation, cwd, attachments)
         result = run_harness(harness_id, prompt, cwd, user_env, files=files)
 
     stdout = str(result.get("stdout") or "").strip()
@@ -344,7 +328,6 @@ def chat(
                 harness_id,
                 _provider_env(db),
                 attachments,
-                body.recall,
             )
         except HTTPException as exc:
             logger.warning("Falha no harness %s: %s", harness_id, exc.detail)
@@ -360,12 +343,6 @@ def chat(
             for message in conversation.messages
             if message.role in {"system", "user", "assistant"}
         ]
-        recall_lines = _recall_block(body.recall)
-        if recall_lines:
-            historico.insert(
-                0,
-                ChatMessage(role="system", content="\n".join(recall_lines).strip()),
-            )
         try:
             reply = OpenCodeProvider(api_key).chat(historico, body.model)
         except ProviderError as exc:

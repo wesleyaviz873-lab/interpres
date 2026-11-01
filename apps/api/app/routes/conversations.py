@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -107,58 +107,6 @@ def create_conversation(
     db.commit()
     db.refresh(conversation)
     return serialize(conversation)
-
-
-@router.get("/search")
-def search_conversations(
-    q: str = Query(min_length=2, max_length=200),
-    limit: int = Query(default=10, ge=1, le=30),
-    user: User = Depends(require_user),
-    db: Session = Depends(get_db),
-) -> dict[str, object]:
-    """Local search over past messages. No model calls, no extra token cost."""
-    term = q.strip()
-    if not term:
-        return {"results": []}
-
-    rows = db.execute(
-        select(ConversationMessage, Conversation)
-        .join(Conversation, Conversation.id == ConversationMessage.conversation_id)
-        .where(
-            Conversation.user_id == user.id,
-            ConversationMessage.content.ilike(f"%{term}%"),
-        )
-        .order_by(ConversationMessage.created_at.desc())
-        .limit(limit * 3)
-    ).all()
-
-    results: list[dict[str, object]] = []
-    seen: set[str] = set()
-    lowered = term.lower()
-    for message, conversation in rows:
-        if conversation.id in seen:
-            continue
-        seen.add(conversation.id)
-        content = message.content
-        index = content.lower().find(lowered)
-        start = max(0, index - 90)
-        snippet = content[start : start + 260]
-        if start > 0:
-            snippet = "…" + snippet
-        if start + 260 < len(content):
-            snippet += "…"
-        results.append(
-            {
-                "conversation_id": conversation.id,
-                "title": conversation.title,
-                "role": message.role,
-                "snippet": snippet.replace("\n", " "),
-                "created_at": message.created_at.isoformat(),
-            }
-        )
-        if len(results) >= limit:
-            break
-    return {"results": results}
 
 
 @router.get("/{conversation_id}")

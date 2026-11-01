@@ -159,17 +159,6 @@ export type ConversationListResponse = {
   conversations: ConversationSummary[]
 }
 
-export type ConversationSearchResult = {
-  conversation_id: string
-  title: string
-  role: string
-  snippet: string
-  created_at: string
-}
-
-export type ConversationSearchResponse = {
-  results: ConversationSearchResult[]
-}
 
 export type ConversationResponse = {
   conversation: ConversationSummary
@@ -489,7 +478,6 @@ export const api = {
       conversationId?: string | null
       projectId?: string | null
       attachments?: ChatAttachment[]
-      recall?: string[]
     } = {},
   ): Promise<ChatResponse> {
     return request<ChatResponse>('/api/chat', {
@@ -501,7 +489,6 @@ export const api = {
         conversation_id: options.conversationId ?? null,
         project_id: options.projectId ?? null,
         attachments: options.attachments ?? [],
-        recall: options.recall ?? [],
       }),
     })
   },
@@ -534,11 +521,6 @@ export const api = {
     return request<ConversationResponse>(`/api/conversations/${encodeURIComponent(id)}`)
   },
 
-  searchConversations(query: string): Promise<ConversationSearchResponse> {
-    return request<ConversationSearchResponse>(
-      `/api/conversations/search?q=${encodeURIComponent(query)}`,
-    )
-  },
 
   updateConversation(
     id: string,

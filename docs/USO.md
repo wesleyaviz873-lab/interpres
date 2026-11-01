@@ -59,27 +59,16 @@ objetivo é economizar, use o harness cujo provedor você já paga.
    contexto que ele já viu.
 2. **Pedidos curtos e específicos.** "Crie `src/auth.ts` com login por e-mail,
    usando o banco existente" custa menos que três parágrafos de contexto.
-3. **Consulte o passado só quando precisar.** O botão de banco busca localmente e
-   injeta apenas o trecho escolhido.
-4. **Não anexe arquivo por anexar.** Se o agente consegue ler a pasta, você não
+3. **Não anexe arquivo por anexar.** Se o agente consegue ler a pasta, você não
    precisa mandar o arquivo.
-5. **Divida a tarefa.** Um pedido por objetivo evita reanálise e retrabalho.
-6. **Evite "explique o projeto inteiro".** Peça o arquivo ou o trecho específico.
+4. **Divida a tarefa.** Um pedido por objetivo evita reanálise e retrabalho.
+5. **Evite "explique o projeto inteiro".** Peça o arquivo ou o trecho específico.
 
 ## Anexos
 
 - Imagens e arquivos até 25 MB, salvos em `<projeto>/.interpres/uploads`.
 - No OpenCode vão por `--file`; no Codex e Hermes, imagens por `--image`.
 - O caminho real é informado no prompt, então o agente pode abrir o arquivo.
-
-## Consultar conversas antigas
-
-1. Clique no ícone de banco ao lado do clipe.
-2. Busque por uma palavra (ex.: "gateway", "migração").
-3. Escolha até três trechos. Eles aparecem como chips acima da mensagem.
-4. Envie. Depois do envio os chips somem.
-
-A busca é local: não chama modelo e não custa nada.
 
 ## O que evitar
 

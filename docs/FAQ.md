@@ -57,9 +57,6 @@ o código, rode as migrações (`alembic upgrade head`) e refaça `npm run build
 **O que é `.interpres/uploads`?**
 A pasta onde os anexos enviados no chat são salvos dentro do projeto.
 
-**A busca em conversas gasta tokens?**
-Não. A busca é local; só o trecho que você escolhe entra no próximo pedido.
-
 **Posso usar outra porta?**
 Sim: `--port 8010` no uvicorn ou `INTERPRES_PORT` no Docker.
 
