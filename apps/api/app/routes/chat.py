@@ -5,18 +5,23 @@ from __future__ import annotations
 import json
 import logging
 import re
+import threading
+from collections.abc import Callable
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..auth import require_csrf
+from .. import jobs
+from ..auth import require_csrf, require_user
+from ..database import SessionLocal, get_db
+from ..harnesses import HARNESSES, clean_output, is_installed, run_harness
+
 from ..config import settings
 from ..crypto import decrypt_secret
-from ..database import get_db
-from ..harnesses import HARNESSES, is_installed, run_harness
 from ..models import (
     Conversation,
     ConversationMessage,
@@ -234,6 +239,7 @@ def _run_harness(
     harness_id: str,
     user_env: dict[str, str],
     attachments: list[tuple[str, str, str]] | None = None,
+    on_line: Callable[[str], None] | None = None,
 ) -> tuple[str, str, str]:
     cwd = _harness_cwd(db, conversation)
     session = conversation.harness_session if conversation.harness == harness_id else None
@@ -251,12 +257,12 @@ def _run_harness(
         if session
         else _harness_prompt(conversation, cwd, attachments)
     )
-    result = run_harness(harness_id, prompt, cwd, user_env, files=files, session=session)
+    result = run_harness(harness_id, prompt, cwd, user_env, files=files, session=session, on_line=on_line)
 
     if not result.get("ok") and session:
         session = None
         prompt = _harness_prompt(conversation, cwd, attachments)
-        result = run_harness(harness_id, prompt, cwd, user_env, files=files)
+        result = run_harness(harness_id, prompt, cwd, user_env, files=files, on_line=on_line)
 
     stdout = str(result.get("stdout") or "").strip()
     stderr = str(result.get("stderr") or "").strip()
@@ -319,9 +325,132 @@ def _persist_error(db: Session, conversation: Conversation, detail: str) -> None
     db.commit()
 
 
+def _execute_chat(
+    db: Session,
+    conversation: Conversation,
+    provider: str,
+    model: str,
+    harness_id: str | None,
+    attachments: list[tuple[str, str, str]],
+    on_line: Callable[[str], None] | None = None,
+) -> tuple[str, str, dict[str, object] | None, ConversationMessage]:
+    if harness_id:
+        reply, session, process = _run_harness(
+            db,
+            conversation,
+            harness_id,
+            _provider_env(db),
+            attachments,
+            on_line,
+        )
+        conversation.harness = harness_id
+        if session:
+            conversation.harness_session = session
+    else:
+        process = ""
+        if on_line:
+            on_line(f"Consultando {model}...")
+        api_key = _api_key(db, provider)
+        historico = [
+            ChatMessage(role=message.role, content=message.content)
+            for message in conversation.messages
+            if message.role in {"system", "user", "assistant"}
+        ]
+        historico.insert(0, ChatMessage(role="system", content="\n".join(QUESTION_RULE)))
+        try:
+            reply = OpenCodeProvider(api_key).chat(historico, model)
+        except ProviderError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)
+            ) from exc
+
+    reply, question = _parse_question(reply)
+
+    assistant_message = ConversationMessage(
+        conversation_id=conversation.id,
+        role="assistant",
+        content=reply,
+        process=process or None,
+        question=json.dumps(question, ensure_ascii=False) if question else None,
+    )
+    db.add(assistant_message)
+    conversation.updated_at = utcnow()
+    db.commit()
+    db.refresh(conversation)
+    return reply, process, question, assistant_message
+
+
+def _run_job(
+    job_id: str,
+    user_id: str,
+    conversation_id: str,
+    provider: str,
+    model: str,
+    harness_id: str | None,
+    attachments: list[tuple[str, str, str]],
+) -> None:
+    db = SessionLocal()
+    conversation: Conversation | None = None
+    try:
+        conversation = db.get(Conversation, conversation_id)
+        if not conversation or conversation.user_id != user_id:
+            jobs.fail(job_id, "Conversa não encontrada.")
+            return
+
+        def on_line(text: str) -> None:
+            jobs.append(job_id, clean_output(text))
+
+        name = HARNESSES[harness_id]["name"] if harness_id else model
+        jobs.append(job_id, f"Iniciando {name}")
+        reply, process, question, assistant = _execute_chat(
+            db, conversation, provider, model, harness_id, attachments, on_line
+        )
+        jobs.append(job_id, "Concluído")
+        jobs.finish(
+            job_id,
+            {
+                "reply": reply,
+                "process": assistant.process,
+                "question": question,
+                "harness": harness_id,
+                "conversation": serialize_conversation(
+                    conversation, len(conversation.messages)
+                ),
+                "assistant_message_id": assistant.id,
+            },
+        )
+    except HTTPException as exc:
+        if conversation is not None:
+            _persist_error(db, conversation, str(exc.detail))
+        jobs.fail(job_id, str(exc.detail))
+    except ProviderError as exc:
+        if conversation is not None:
+            _persist_error(db, conversation, str(exc))
+        jobs.fail(job_id, str(exc))
+    except Exception as exc:  # noqa: BLE001 - report to the UI and keep the server up
+        logger.exception("Job de chat falhou")
+        if conversation is not None:
+            _persist_error(db, conversation, f"Erro inesperado: {exc}")
+        jobs.fail(job_id, f"Erro inesperado: {exc}")
+    finally:
+        db.close()
+
+
+@router.get("/jobs/{job_id}")
+def job_status(
+    job_id: str,
+    user: User = Depends(require_user),
+) -> dict[str, object]:
+    data = jobs.get(job_id, user.id)
+    if not data:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job não encontrado.")
+    return data
+
+
 @router.post("")
 def chat(
     body: ChatRequest,
+    request: Request,
     user: User = Depends(require_csrf),
     db: Session = Depends(get_db),
 ) -> dict[str, object]:
@@ -362,65 +491,51 @@ def chat(
     db.add(user_message)
     db.commit()
 
-    if harness_id:
-        attachments: list[tuple[str, str, str]] = []
-        for item in body.attachments:
-            path = resolve_attachment(item.path, user, db)
-            if path:
-                attachments.append((item.name, str(path), item.mime))
-        try:
-            reply, session, process = _run_harness(
-                db,
-                conversation,
+    attachments: list[tuple[str, str, str]] = []
+    for item in body.attachments:
+        path = resolve_attachment(item.path, user, db)
+        if path:
+            attachments.append((item.name, str(path), item.mime))
+
+    if request.headers.get("x-interpres-async") == "1":
+        job_id = jobs.create(user.id)
+        threading.Thread(
+            target=_run_job,
+            args=(
+                job_id,
+                user.id,
+                conversation.id,
+                provider,
+                body.model,
                 harness_id,
-                _provider_env(db),
                 attachments,
-            )
-        except HTTPException as exc:
-            logger.warning("Falha no harness %s: %s", harness_id, exc.detail)
-            _persist_error(db, conversation, str(exc.detail))
-            raise
-        conversation.harness = harness_id
-        if session:
-            conversation.harness_session = session
-    else:
-        process = ""
-        api_key = _api_key(db, provider)
-        historico = [
-            ChatMessage(role=message.role, content=message.content)
-            for message in conversation.messages
-            if message.role in {"system", "user", "assistant"}
-        ]
-        historico.insert(0, ChatMessage(role="system", content="\n".join(QUESTION_RULE)))
-        try:
-            reply = OpenCodeProvider(api_key).chat(historico, body.model)
-        except ProviderError as exc:
-            logger.warning("Falha no chat OpenCode: %s", exc)
-            _persist_error(db, conversation, str(exc))
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)
-            ) from exc
+            ),
+            daemon=True,
+        ).start()
+        return JSONResponse(
+            status_code=status.HTTP_202_ACCEPTED,
+            content={
+                "job_id": job_id,
+                "conversation": serialize_conversation(
+                    conversation, len(conversation.messages)
+                ),
+                "user_message_id": user_message.id,
+            },
+        )
 
-    reply, question = _parse_question(reply)
-
-    assistant_message = ConversationMessage(
-        conversation_id=conversation.id,
-        role="assistant",
-        content=reply,
-        process=process or None,
-        question=json.dumps(question, ensure_ascii=False) if question else None,
-    )
-    db.add(assistant_message)
-    conversation.updated_at = utcnow()
-    db.commit()
-    db.refresh(conversation)
-
+    try:
+        reply, process, question, assistant = _execute_chat(
+            db, conversation, provider, body.model, harness_id, attachments
+        )
+    except HTTPException as exc:
+        _persist_error(db, conversation, str(exc.detail))
+        raise
     return {
         "reply": reply,
-        "process": assistant_message.process,
+        "process": assistant.process,
         "question": question,
         "harness": harness_id,
         "conversation": serialize_conversation(conversation, len(conversation.messages)),
         "user_message_id": user_message.id,
-        "assistant_message_id": assistant_message.id,
+        "assistant_message_id": assistant.id,
     }

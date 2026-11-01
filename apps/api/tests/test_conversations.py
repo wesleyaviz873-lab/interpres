@@ -218,7 +218,7 @@ def test_chat_uses_selected_harness(client: TestClient, monkeypatch) -> None:
 
     calls: list[dict] = []
 
-    def fake_run(harness_id, prompt, cwd, extra_env=None, timeout=600, files=None, session=None):
+    def fake_run(harness_id, prompt, cwd, extra_env=None, timeout=600, files=None, session=None, on_line=None):
         calls.append({"id": harness_id, "prompt": prompt, "cwd": Path(cwd), "files": files})
         return {"ok": True, "exit_code": 0, "stdout": "arquivo criado", "stderr": ""}
 
@@ -291,7 +291,7 @@ def test_upload_saves_into_project_and_reaches_harness(client: TestClient, monke
 
     captured: dict = {}
 
-    def fake_run(harness_id, prompt, cwd, extra_env=None, timeout=600, files=None, session=None):
+    def fake_run(harness_id, prompt, cwd, extra_env=None, timeout=600, files=None, session=None, on_line=None):
         captured["prompt"] = prompt
         captured["files"] = files
         return {"ok": True, "exit_code": 0, "stdout": "ok", "stderr": ""}
@@ -323,7 +323,7 @@ def test_upload_rejects_foreign_paths(client: TestClient, monkeypatch) -> None:
 
     captured: dict = {}
 
-    def fake_run(harness_id, prompt, cwd, extra_env=None, timeout=600, files=None, session=None):
+    def fake_run(harness_id, prompt, cwd, extra_env=None, timeout=600, files=None, session=None, on_line=None):
         captured["files"] = files
         return {"ok": True, "exit_code": 0, "stdout": "ok", "stderr": ""}
 
@@ -353,7 +353,7 @@ def test_harness_session_is_reused_and_stored(client: TestClient, monkeypatch) -
 
     calls: list[dict] = []
 
-    def fake_run(harness_id, prompt, cwd, extra_env=None, timeout=600, files=None, session=None):
+    def fake_run(harness_id, prompt, cwd, extra_env=None, timeout=600, files=None, session=None, on_line=None):
         calls.append({"prompt": prompt, "session": session, "files": files})
         return {"ok": True, "exit_code": 0, "stdout": "ok", "session": "sess-1"}
 
@@ -412,7 +412,7 @@ def test_chat_stores_question_card(client: TestClient, monkeypatch) -> None:
     headers = _headers(client)
     monkeypatch.setattr(chat_routes, "selected_harness", lambda _db: "opencode")
 
-    def fake_run(harness_id, prompt, cwd, extra_env=None, timeout=600, files=None, session=None):
+    def fake_run(harness_id, prompt, cwd, extra_env=None, timeout=600, files=None, session=None, on_line=None):
         return {
             "ok": True,
             "exit_code": 0,
@@ -440,3 +440,42 @@ def test_chat_stores_question_card(client: TestClient, monkeypatch) -> None:
     read = client.get(f"/api/conversations/{payload['conversation']['id']}").json()
     assistant = read["messages"][-1]
     assert assistant["question"] == {"question": "Qual opção?", "options": ["A", "B"]}
+
+def test_async_chat_streams_progress(client: TestClient, monkeypatch) -> None:
+    import time
+
+    _setup(client)
+    headers = _headers(client)
+    monkeypatch.setattr(chat_routes, "selected_harness", lambda _db: "opencode")
+
+    def fake_run(harness_id, prompt, cwd, extra_env=None, timeout=600, files=None, session=None, on_line=None):
+        if on_line:
+            on_line("passo um\n")
+            on_line("passo dois\n")
+        return {"ok": True, "exit_code": 0, "stdout": "resposta final", "stderr": "", "session": ""}
+
+    monkeypatch.setattr(chat_routes, "run_harness", fake_run)
+
+    response = client.post(
+        "/api/chat",
+        headers={**headers, "X-Interpres-Async": "1"},
+        json={
+            "provider": "opencode",
+            "model": "deepseek-v4.1-flash",
+            "messages": [{"role": "user", "content": "execute"}],
+        },
+    )
+    assert response.status_code == 202, response.text
+    job_id = response.json()["job_id"]
+
+    data = {"status": "running"}
+    for _ in range(60):
+        data = client.get(f"/api/chat/jobs/{job_id}").json()
+        if data["status"] != "running":
+            break
+        time.sleep(0.1)
+
+    assert data["status"] == "done"
+    assert any("passo um" in line for line in data["log"])
+    assert data["result"]["reply"] == "resposta final"
+    assert client.get("/api/chat/jobs/inexistente").status_code == 404

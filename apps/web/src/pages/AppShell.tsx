@@ -32,6 +32,7 @@ import {
 } from '../components/icons'
 import {
   api,
+  ApiError,
   type ConversationSummary,
   type MessageQuestion,
   type OpenCodeModel,
@@ -281,6 +282,7 @@ export function AppShell({ user, onUserChange, onLogout, onSessionEnded }: AppSh
     () => localStorage.getItem('interpres_voice_replies') === '1',
   )
   const [speakingId, setSpeakingId] = useState<string | null>(null)
+  const [job, setJob] = useState<{ id: string; log: string[]; status: string } | null>(null)
   const [ttsEnabled, setTtsEnabled] = useState(() => loadVoice().tts !== 'none')
   const fileInputRef = useRef<HTMLInputElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -288,6 +290,7 @@ export function AppShell({ user, onUserChange, onLogout, onSessionEnded }: AppSh
   const recorderRef = useRef<MediaRecorder | null>(null)
   const chunksRef = useRef<Blob[]>([])
   const chatEndRef = useRef<HTMLDivElement>(null)
+  const jobLogRef = useRef<HTMLPreElement>(null)
   const filesRef = useRef<Attachment[]>([])
   const { toast, showToast } = useToast()
 
@@ -422,6 +425,21 @@ export function AppShell({ user, onUserChange, onLogout, onSessionEnded }: AppSh
       if (saved && conversationList.some((item) => item.id === saved)) {
         await openConversation(saved)
       }
+
+      const pending = localStorage.getItem('interpres_job')
+      if (pending) {
+        try {
+          const parsed = JSON.parse(pending) as { id?: string; conversationId?: string }
+          if (parsed.id && parsed.conversationId) {
+            setSending(true)
+            void followJob(parsed.id, parsed.conversationId)
+          } else {
+            localStorage.removeItem('interpres_job')
+          }
+        } catch {
+          localStorage.removeItem('interpres_job')
+        }
+      }
     }
     void boot()
     return () => {
@@ -473,6 +491,11 @@ export function AppShell({ user, onUserChange, onLogout, onSessionEnded }: AppSh
     )
     return () => window.clearInterval(timer)
   }, [sending])
+
+  useEffect(() => {
+    const el = jobLogRef.current
+    if (el) el.scrollTop = el.scrollHeight
+  }, [job?.log.length])
 
   useEffect(() => {
     const el = textareaRef.current
@@ -762,6 +785,67 @@ export function AppShell({ user, onUserChange, onLogout, onSessionEnded }: AppSh
     }
   }
 
+  async function followJob(jobId: string, conversationId: string) {
+    const startedAt = Date.now()
+    localStorage.setItem('interpres_job', JSON.stringify({ id: jobId, conversationId }))
+    setJob({ id: jobId, log: [], status: 'running' })
+
+    while (true) {
+      await new Promise((resolve) => setTimeout(resolve, 700))
+      let data
+      try {
+        data = await api.chatJob(jobId)
+      } catch (error) {
+        const lost = error instanceof ApiError && error.status === 404
+        if (lost || Date.now() - startedAt > 15 * 60 * 1000) {
+          localStorage.removeItem('interpres_job')
+          setJob(null)
+          setSending(false)
+          showToast('A execução anterior foi perdida.', 'error')
+          await openConversation(conversationId)
+          return
+        }
+        continue
+      }
+
+      setJob({ id: jobId, log: data.log, status: data.status })
+      if (data.status === 'running') {
+        if (Date.now() - startedAt > 15 * 60 * 1000) {
+          localStorage.removeItem('interpres_job')
+          setJob(null)
+          setSending(false)
+          showToast('A execução demorou demais para responder.', 'error')
+          return
+        }
+        continue
+      }
+
+      localStorage.removeItem('interpres_job')
+      setJob(null)
+      setSending(false)
+
+      if (data.status === 'done' && data.result) {
+        const result = data.result
+        await openConversation(result.conversation.id)
+        if (voiceReplies) {
+          const spoken = `${result.reply}${
+            result.question ? `. ${result.question.question}` : ''
+          }`.trim()
+          if (spoken) {
+            window.setTimeout(
+              () => startSpeak(result.assistant_message_id, spoken),
+              250,
+            )
+          }
+        }
+      } else {
+        const detail = data.error ?? 'erro desconhecido'
+        showToast(detail, 'error')
+        await openConversation(conversationId)
+      }
+      return
+    }
+  }
   async function handleSend(event?: FormEvent<HTMLFormElement>, override?: string) {
     event?.preventDefault()
     const usingOverride = typeof override === 'string'
@@ -805,7 +889,7 @@ export function AppShell({ user, onUserChange, onLogout, onSessionEnded }: AppSh
       const uploaded = await Promise.all(
         anexosParaEnviar.map((file) => api.upload(file, activeProjectId)),
       )
-      const resposta = await api.chat(
+      const started = await api.startChat(
         provider,
         model,
         historico.map(({ role, content }) => ({ role, content })),
@@ -813,33 +897,12 @@ export function AppShell({ user, onUserChange, onLogout, onSessionEnded }: AppSh
           conversationId: activeId,
           projectId: activeProjectId,
           attachments: uploaded.map(({ name, path, mime }) => ({ name, path, mime })),
-
         },
       )
-      setMessages([
-        ...historico,
-        {
-          id: resposta.assistant_message_id,
-          role: 'assistant',
-          content: resposta.reply,
-          process: resposta.process,
-          question: resposta.question,
-        },
-      ])
-      if (voiceReplies) {
-        const spoken = `${resposta.reply}${
-          resposta.question ? `. ${resposta.question.question}` : ''
-        }`.trim()
-        if (spoken) {
-          window.setTimeout(
-            () => startSpeak(resposta.assistant_message_id, spoken),
-            250,
-          )
-        }
-      }
-      setActiveId(resposta.conversation.id)
-      localStorage.setItem(CONVERSATION_KEY, resposta.conversation.id)
+      setActiveId(started.conversation.id)
+      localStorage.setItem(CONVERSATION_KEY, started.conversation.id)
       await refreshConversations()
+      void followJob(started.job_id, started.conversation.id)
     } catch (error) {
       setMessages([
         ...historico,
@@ -851,7 +914,6 @@ export function AppShell({ user, onUserChange, onLogout, onSessionEnded }: AppSh
           }`,
         },
       ])
-    } finally {
       setSending(false)
     }
   }
@@ -1099,12 +1161,30 @@ export function AppShell({ user, onUserChange, onLogout, onSessionEnded }: AppSh
                   <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-accent/25 bg-accent/10 text-accent">
                     <Chat className="h-4 w-4" />
                   </div>
-                  <div className="rounded-2xl rounded-tl-md border border-line bg-panel px-3.5 py-2.5 text-[12px] text-muted">
-                    {harness ? `Executando no ${harness.name}` : 'Pensando'}
-                    {elapsed > 1
-                      ? ` · ${Math.floor(elapsed / 60)}:${String(elapsed % 60).padStart(2, '0')}`
-                      : '…'}
-                  </div>
+                  <details className="min-w-0 flex-1 rounded-2xl rounded-tl-md border border-line bg-panel px-3.5 py-2.5 text-[12px] text-muted">
+                    <summary className="flex cursor-pointer select-none items-center gap-1.5">
+                      <ChevronDown className="chevron h-3 w-3 shrink-0 transition-transform" />
+                      <span className="truncate">
+                        {harness ? `Executando no ${harness.name}` : 'Consultando modelo'}
+                        {elapsed > 1
+                          ? ` · ${Math.floor(elapsed / 60)}:${String(elapsed % 60).padStart(2, '0')}`
+                          : '…'}
+                      </span>
+                      {job ? (
+                        <span className="ml-auto shrink-0 text-[10px] text-muted/80">
+                          {job.log.length} {job.log.length === 1 ? 'passo' : 'passos'}
+                        </span>
+                      ) : null}
+                    </summary>
+                    <pre
+                      ref={jobLogRef}
+                      className="mt-2 max-h-56 overflow-auto whitespace-pre-wrap break-words font-mono text-[10px] leading-4 text-muted"
+                    >
+                      {job && job.log.length > 0
+                        ? job.log.join('\n')
+                        : 'Aguardando o primeiro passo...'}
+                    </pre>
+                  </details>
                 </div>
               ) : null}
               <div ref={chatEndRef} />
@@ -1486,6 +1566,9 @@ export function AppShell({ user, onUserChange, onLogout, onSessionEnded }: AppSh
                 </div>
               </div>
             </form>
+            <p className="mt-1 hidden px-1 text-[10px] leading-4 text-muted/70 sm:block">
+              Enter cria nova linha · Ctrl+Enter envia
+            </p>
           </div>
         </main>
       </div>

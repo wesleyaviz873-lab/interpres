@@ -7,6 +7,8 @@ import re
 import shutil
 import signal
 import subprocess
+import threading
+from collections.abc import Callable
 from pathlib import Path
 
 from .config import settings
@@ -276,8 +278,9 @@ def _run_process(
     cwd: Path,
     env: dict[str, str],
     timeout: int,
+    on_line: Callable[[str], None] | None = None,
 ) -> tuple[str, str, int, bool]:
-    """Run a command with a hard timeout that also kills grandchildren."""
+    """Run a command streaming lines, with a hard timeout that kills the tree."""
     kwargs: dict[str, object] = {}
     if os.name == "nt":
         kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
@@ -291,20 +294,55 @@ def _run_process(
         text=True,
         encoding="utf-8",
         errors="replace",
+        bufsize=1,
         cwd=str(cwd),
         env=env,
         **kwargs,
     )
+
+    out_parts: list[str] = []
+    err_parts: list[str] = []
+
+    def pump(stream, sink: list[str]) -> None:
+        try:
+            for line in stream:
+                sink.append(line)
+                if on_line is not None:
+                    try:
+                        on_line(line)
+                    except Exception:  # noqa: BLE001 - logging is best effort
+                        pass
+        except Exception:  # noqa: BLE001 - stream closed
+            pass
+
+    threads = [
+        threading.Thread(target=pump, args=(process.stdout, out_parts), daemon=True),
+        threading.Thread(target=pump, args=(process.stderr, err_parts), daemon=True),
+    ]
+    for thread in threads:
+        thread.start()
+
+    timed_out = False
     try:
-        out, err = process.communicate(timeout=timeout)
-        return out or "", err or "", process.returncode, False
+        process.wait(timeout=timeout)
     except subprocess.TimeoutExpired:
+        timed_out = True
         _kill_tree(process)
         try:
-            out, err = process.communicate(timeout=15)
-        except Exception:  # noqa: BLE001 - pipes may still be held
-            out, err = "", ""
-        return out or "", err or "", -1, True
+            process.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            pass
+
+    for thread in threads:
+        thread.join(timeout=10)
+    for stream in (process.stdout, process.stderr):
+        try:
+            stream.close()
+        except Exception:  # noqa: BLE001 - already closed
+            pass
+
+    code = -1 if timed_out else process.returncode
+    return "".join(out_parts), "".join(err_parts), code, timed_out
 
 
 def run_harness(
@@ -315,13 +353,18 @@ def run_harness(
     timeout: int = 420,
     files: list[str] | None = None,
     session: str | None = None,
+    on_line: Callable[[str], None] | None = None,
 ) -> dict[str, object]:
     command = command_for(harness_id, prompt, files, session)
     if not command:
         return {"ok": False, "exit_code": -1, "stdout": "", "stderr": "Harness não instalado."}
     try:
         raw_out, raw_err, code, timed_out = _run_process(
-            command, cwd, _env_with_binary(harness_id, extra_env), timeout
+            command,
+            cwd,
+            _env_with_binary(harness_id, extra_env),
+            timeout,
+            on_line=on_line,
         )
     except Exception as exc:  # noqa: BLE001 - report tool failure to the UI
         return {

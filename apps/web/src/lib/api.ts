@@ -183,6 +183,28 @@ export type UploadResponse = ChatAttachment & {
   size: number
 }
 
+export type ChatStartResponse = {
+  job_id: string
+  conversation: ConversationSummary
+  user_message_id: string
+}
+
+export type ChatJobResult = {
+  reply: string
+  process: string | null
+  question: MessageQuestion | null
+  harness: string | null
+  conversation: ConversationSummary
+  assistant_message_id: string
+}
+
+export type ChatJobStatus = {
+  status: 'running' | 'done' | 'error'
+  log: string[]
+  result: ChatJobResult | null
+  error: string | null
+}
+
 export type ChatResponse = {
   reply: string
   process: string | null
@@ -510,6 +532,34 @@ export const api = {
       method: 'POST',
       body: form,
     })
+  },
+
+  startChat(
+    provider: string,
+    model: string,
+    messages: ChatTurn[],
+    options: {
+      conversationId?: string | null
+      projectId?: string | null
+      attachments?: ChatAttachment[]
+    } = {},
+  ): Promise<ChatStartResponse> {
+    return request<ChatStartResponse>('/api/chat', {
+      method: 'POST',
+      headers: { 'X-Interpres-Async': '1' },
+      body: JSON.stringify({
+        provider,
+        model,
+        messages,
+        conversation_id: options.conversationId ?? null,
+        project_id: options.projectId ?? null,
+        attachments: options.attachments ?? [],
+      }),
+    })
+  },
+
+  chatJob(jobId: string): Promise<ChatJobStatus> {
+    return request<ChatJobStatus>(`/api/chat/jobs/${encodeURIComponent(jobId)}`)
   },
 
   upload(file: File, projectId?: string | null): Promise<UploadResponse> {
