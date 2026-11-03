@@ -571,6 +571,12 @@ export const api = {
     })
   },
 
+  cancelJob(jobId: string): Promise<OkResponse> {
+    return request<OkResponse>(`/api/chat/jobs/${encodeURIComponent(jobId)}/cancel`, {
+      method: 'POST',
+    })
+  },
+
   chatJob(jobId: string): Promise<ChatJobStatus> {
     return request<ChatJobStatus>(`/api/chat/jobs/${encodeURIComponent(jobId)}`)
   },

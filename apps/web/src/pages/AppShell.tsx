@@ -722,6 +722,15 @@ export function AppShell({ user, onUserChange, onLogout, onSessionEnded }: AppSh
     startSpeak(id, text)
   }
 
+  async function cancelCurrentJob() {
+    if (!job) return
+    try {
+      await api.cancelJob(job.id)
+      showToast('Cancelando execução…')
+    } catch {
+      showToast('Não consegui cancelar a execução.', 'error')
+    }
+  }
   function toggleVoiceReplies() {
     const next = !voiceReplies
     setVoiceReplies(next)
@@ -847,7 +856,7 @@ export function AppShell({ user, onUserChange, onLogout, onSessionEnded }: AppSh
         data = await api.chatJob(jobId)
       } catch (error) {
         const lost = error instanceof ApiError && error.status === 404
-        if (lost || Date.now() - startedAt > 50 * 60 * 1000) {
+        if (lost || Date.now() - startedAt > 180 * 60 * 1000) {
           localStorage.removeItem('interpres_job')
           setJob(null)
           setSending(false)
@@ -860,7 +869,7 @@ export function AppShell({ user, onUserChange, onLogout, onSessionEnded }: AppSh
 
       setJob({ id: jobId, log: data.log, status: data.status })
       if (data.status === 'running') {
-        if (Date.now() - startedAt > 50 * 60 * 1000) {
+        if (Date.now() - startedAt > 180 * 60 * 1000) {
           localStorage.removeItem('interpres_job')
           setJob(null)
           setSending(false)
@@ -1247,6 +1256,20 @@ export function AppShell({ user, onUserChange, onLogout, onSessionEnded }: AppSh
                           {jobProgress?.lines.length ?? 0}{' '}
                           {(jobProgress?.lines.length ?? 0) === 1 ? 'passo' : 'passos'}
                         </span>
+                      ) : null}
+                                          {job ? (
+                        <button
+                          type="button"
+                          onPointerDown={(event) => event.stopPropagation()}
+                          onClick={(event) => {
+                            event.preventDefault()
+                            event.stopPropagation()
+                            void cancelCurrentJob()
+                          }}
+                          className="shrink-0 rounded-md border border-red-400/30 px-1.5 py-0.5 text-[9.5px] font-medium text-red-300 transition-colors hover:bg-red-500/10"
+                        >
+                          Cancelar
+                        </button>
                       ) : null}
                     </summary>
                     <pre

@@ -7,6 +7,7 @@ import re
 import shutil
 import signal
 import subprocess
+import time
 import threading
 from collections.abc import Callable
 from pathlib import Path
@@ -279,7 +280,8 @@ def _run_process(
     env: dict[str, str],
     timeout: int,
     on_line: Callable[[str], None] | None = None,
-) -> tuple[str, str, int, bool]:
+    cancel_event: threading.Event | None = None,
+) -> tuple[str, str, int, bool, bool]:
     """Run a command streaming lines, with a hard timeout that kills the tree."""
     kwargs: dict[str, object] = {}
     if os.name == "nt":
@@ -323,15 +325,21 @@ def _run_process(
         thread.start()
 
     timed_out = False
-    try:
-        process.wait(timeout=timeout)
-    except subprocess.TimeoutExpired:
-        timed_out = True
-        _kill_tree(process)
+    canceled = False
+    started = time.time()
+    while True:
+        if cancel_event is not None and cancel_event.is_set():
+            canceled = True
+            _kill_tree(process)
+            break
         try:
-            process.wait(timeout=10)
+            process.wait(timeout=0.5)
+            break
         except subprocess.TimeoutExpired:
-            pass
+            if timeout > 0 and time.time() - started >= timeout:
+                timed_out = True
+                _kill_tree(process)
+                break
 
     for thread in threads:
         thread.join(timeout=10)
@@ -341,8 +349,8 @@ def _run_process(
         except Exception:  # noqa: BLE001 - already closed
             pass
 
-    code = -1 if timed_out else process.returncode
-    return "".join(out_parts), "".join(err_parts), code, timed_out
+    code = -1 if timed_out or canceled else process.returncode
+    return "".join(out_parts), "".join(err_parts), code, timed_out, canceled
 
 
 def run_harness(
@@ -350,21 +358,23 @@ def run_harness(
     prompt: str,
     cwd: Path,
     extra_env: dict[str, str] | None = None,
-    timeout: int = 420,
+    timeout: int = 0,
     files: list[str] | None = None,
     session: str | None = None,
     on_line: Callable[[str], None] | None = None,
+    cancel_event: threading.Event | None = None,
 ) -> dict[str, object]:
     command = command_for(harness_id, prompt, files, session)
     if not command:
         return {"ok": False, "exit_code": -1, "stdout": "", "stderr": "Harness não instalado."}
     try:
-        raw_out, raw_err, code, timed_out = _run_process(
+        raw_out, raw_err, code, timed_out, canceled = _run_process(
             command,
             cwd,
             _env_with_binary(harness_id, extra_env),
             timeout,
             on_line=on_line,
+            cancel_event=cancel_event,
         )
     except Exception as exc:  # noqa: BLE001 - report tool failure to the UI
         return {
@@ -372,6 +382,16 @@ def run_harness(
             "exit_code": -1,
             "stdout": "",
             "stderr": str(exc),
+            "session": "",
+        }
+
+    if canceled:
+        return {
+            "ok": False,
+            "canceled": True,
+            "exit_code": -1,
+            "stdout": clean_output(raw_out)[-2000:],
+            "stderr": "Cancelado pelo usuário.",
             "session": "",
         }
 

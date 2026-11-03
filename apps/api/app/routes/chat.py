@@ -323,6 +323,7 @@ def _run_harness(
     user_env: dict[str, str],
     attachments: list[tuple[str, str, str]] | None = None,
     on_line: Callable[[str], None] | None = None,
+    cancel_event: threading.Event | None = None,
 ) -> tuple[str, str, str]:
     cwd = _harness_cwd(db, conversation)
     session = conversation.harness_session if conversation.harness == harness_id else None
@@ -349,6 +350,7 @@ def _run_harness(
         session=session,
         on_line=on_line,
         timeout=settings.harness_timeout_seconds,
+        cancel_event=cancel_event,
     )
 
     if not result.get("ok") and session:
@@ -362,6 +364,7 @@ def _run_harness(
             files=files,
             on_line=on_line,
             timeout=settings.harness_timeout_seconds,
+            cancel_event=cancel_event,
         )
 
     stdout = str(result.get("stdout") or "").strip()
@@ -433,6 +436,7 @@ def _execute_chat(
     harness_id: str | None,
     attachments: list[tuple[str, str, str]],
     on_line: Callable[[str], None] | None = None,
+    cancel_event: threading.Event | None = None,
 ) -> tuple[str, str, dict[str, object] | None, ConversationMessage]:
     if harness_id:
         tool_env = _provider_env(db)
@@ -447,6 +451,7 @@ def _execute_chat(
             tool_env,
             attachments,
             on_line,
+            cancel_event,
         )
         conversation.harness = harness_id
         if session:
@@ -509,7 +514,14 @@ def _run_job(
         name = HARNESSES[harness_id]["name"] if harness_id else model
         jobs.append(job_id, f"Iniciando {name}")
         reply, process, question, assistant = _execute_chat(
-            db, conversation, provider, model, harness_id, attachments, on_line
+            db,
+            conversation,
+            provider,
+            model,
+            harness_id,
+            attachments,
+            on_line,
+            jobs.cancel_event(job_id),
         )
         jobs.append(job_id, "Concluído")
         jobs.finish(
@@ -540,6 +552,16 @@ def _run_job(
         jobs.fail(job_id, f"Erro inesperado: {exc}")
     finally:
         db.close()
+
+
+@router.post("/jobs/{job_id}/cancel")
+def cancel_job(
+    job_id: str,
+    user: User = Depends(require_csrf),
+) -> dict[str, bool]:
+    if not jobs.cancel(job_id, user.id):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job não encontrado.")
+    return {"ok": True}
 
 
 @router.get("/jobs/{job_id}")

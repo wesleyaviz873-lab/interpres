@@ -9,7 +9,7 @@ import uuid
 _LOCK = threading.Lock()
 _JOBS: dict[str, dict[str, object]] = {}
 _MAX_JOBS = 60
-_TTL_SECONDS = 3600
+_TTL_SECONDS = 86400
 _MAX_LINES = 800
 
 
@@ -41,6 +41,7 @@ def create(user_id: str) -> str:
             "error": None,
             "created": time.time(),
             "updated": time.time(),
+            "cancel": threading.Event(),
         }
     return job_id
 
@@ -79,6 +80,26 @@ def fail(job_id: str, error: str) -> None:
         job["status"] = "error"
         job["error"] = str(error)[:1000]
         job["updated"] = time.time()
+
+
+def cancel(job_id: str, user_id: str) -> bool:
+    with _LOCK:
+        job = _JOBS.get(job_id)
+        if not job or job.get("user_id") != user_id:
+            return False
+        event = job.get("cancel")
+        if isinstance(event, threading.Event):
+            event.set()
+        return True
+
+
+def cancel_event(job_id: str) -> threading.Event | None:
+    with _LOCK:
+        job = _JOBS.get(job_id)
+        if not job:
+            return None
+        event = job.get("cancel")
+        return event if isinstance(event, threading.Event) else None
 
 
 def get(job_id: str, user_id: str) -> dict[str, object] | None:
