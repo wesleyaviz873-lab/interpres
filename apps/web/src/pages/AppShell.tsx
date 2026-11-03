@@ -847,7 +847,7 @@ export function AppShell({ user, onUserChange, onLogout, onSessionEnded }: AppSh
         data = await api.chatJob(jobId)
       } catch (error) {
         const lost = error instanceof ApiError && error.status === 404
-        if (lost || Date.now() - startedAt > 15 * 60 * 1000) {
+        if (lost || Date.now() - startedAt > 50 * 60 * 1000) {
           localStorage.removeItem('interpres_job')
           setJob(null)
           setSending(false)
@@ -860,7 +860,7 @@ export function AppShell({ user, onUserChange, onLogout, onSessionEnded }: AppSh
 
       setJob({ id: jobId, log: data.log, status: data.status })
       if (data.status === 'running') {
-        if (Date.now() - startedAt > 15 * 60 * 1000) {
+        if (Date.now() - startedAt > 50 * 60 * 1000) {
           localStorage.removeItem('interpres_job')
           setJob(null)
           setSending(false)
@@ -1127,24 +1127,6 @@ export function AppShell({ user, onUserChange, onLogout, onSessionEnded }: AppSh
               className="h-full overflow-y-auto px-4 py-6"
             >
             <div className="mx-auto flex w-full max-w-3xl flex-col gap-3.5">
-              <div className="flex items-start gap-3">
-                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-accent/25 bg-accent/10 text-accent">
-                  <Chat className="h-4 w-4" />
-                </div>
-                <div className="min-w-0 max-w-[min(560px,85%)] rounded-2xl rounded-tl-md border border-line bg-panel px-3.5 py-2.5">
-                  <p className="text-[10px] font-medium uppercase tracking-[0.12em] text-muted">
-                    Interpres
-                  </p>
-                  <p className="mt-1 text-[12.5px] leading-5 text-paper/90">
-                    {hasProvider || harness
-                      ? activeProject
-                        ? `Trabalhando em ${activeProject.name}. Peça o que precisar.`
-                        : 'Escolha um projeto e mande sua mensagem.'
-                      : 'Olá! Conecte um provedor ou use o Ollama local para começar.'}
-                  </p>
-                </div>
-              </div>
-
               {messages.map((message, index) =>
                 message.role === 'user' ? (
                   <div key={message.id} className="flex justify-end">

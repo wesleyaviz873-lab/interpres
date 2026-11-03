@@ -340,12 +340,29 @@ def _run_harness(
         if session
         else _harness_prompt(conversation, cwd, attachments)
     )
-    result = run_harness(harness_id, prompt, cwd, user_env, files=files, session=session, on_line=on_line)
+    result = run_harness(
+        harness_id,
+        prompt,
+        cwd,
+        user_env,
+        files=files,
+        session=session,
+        on_line=on_line,
+        timeout=settings.harness_timeout_seconds,
+    )
 
     if not result.get("ok") and session:
         session = None
         prompt = _harness_prompt(conversation, cwd, attachments)
-        result = run_harness(harness_id, prompt, cwd, user_env, files=files, on_line=on_line)
+        result = run_harness(
+            harness_id,
+            prompt,
+            cwd,
+            user_env,
+            files=files,
+            on_line=on_line,
+            timeout=settings.harness_timeout_seconds,
+        )
 
     stdout = str(result.get("stdout") or "").strip()
     stderr = str(result.get("stderr") or "").strip()
