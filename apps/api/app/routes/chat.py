@@ -20,7 +20,13 @@ from sqlalchemy.orm import Session
 from .. import jobs, tool_tokens
 from ..auth import require_csrf, require_user
 from ..database import SessionLocal, get_db
-from ..harnesses import HARNESSES, clean_output, is_installed, run_harness
+from ..harnesses import (
+    HARNESSES,
+    available_memory_mb,
+    clean_output,
+    is_installed,
+    run_harness,
+)
 from ..screenshots import available as screenshots_available
 
 from ..config import settings
@@ -45,6 +51,8 @@ router = APIRouter(prefix="/api/chat", tags=["chat"])
 
 DEFAULT_TITLE = "Nova conversa"
 PROMPT_BUDGET = 12000
+
+_HARNESS_LOCK = threading.Lock()
 
 _API_DIR = Path(__file__).resolve().parents[2]
 _REPO_DIR = _API_DIR.parent.parent
@@ -444,15 +452,18 @@ def _execute_chat(
         tool_env["INTERPRES_TOOL_TOKEN"] = tool_tokens.create(
             conversation.id, conversation.user_id
         )
-        reply, session, process = _run_harness(
-            db,
-            conversation,
-            harness_id,
-            tool_env,
-            attachments,
-            on_line,
-            cancel_event,
-        )
+        if _HARNESS_LOCK.locked() and on_line:
+            on_line("Aguardando outra execução terminar...")
+        with _HARNESS_LOCK:
+            reply, session, process = _run_harness(
+                db,
+                conversation,
+                harness_id,
+                tool_env,
+                attachments,
+                on_line,
+                cancel_event,
+            )
         conversation.harness = harness_id
         if session:
             conversation.harness_session = session
@@ -512,6 +523,13 @@ def _run_job(
             jobs.append(job_id, clean_output(text))
 
         name = HARNESSES[harness_id]["name"] if harness_id else model
+        free_mb = available_memory_mb()
+        if free_mb is not None and free_mb < 1500:
+            jobs.append(
+                job_id,
+                f"Atenção: apenas {free_mb} MB de RAM livre. Feche apps pesados; "
+                "a execução pode falhar por falta de memória.",
+            )
         jobs.append(job_id, f"Iniciando {name}")
         reply, process, question, assistant = _execute_chat(
             db,

@@ -193,6 +193,41 @@ def install(harness_id: str) -> tuple[bool, str]:
     return True, ""
 
 
+def available_memory_mb() -> int | None:
+    """Best-effort available physical memory in MB."""
+    if os.name == "nt":
+        try:
+            import ctypes
+
+            class MemoryStatusEx(ctypes.Structure):
+                _fields_ = [
+                    ("dwLength", ctypes.c_ulong),
+                    ("dwMemoryLoad", ctypes.c_ulong),
+                    ("ullTotalPhys", ctypes.c_ulonglong),
+                    ("ullAvailPhys", ctypes.c_ulonglong),
+                    ("ullTotalPageFile", ctypes.c_ulonglong),
+                    ("ullAvailPageFile", ctypes.c_ulonglong),
+                    ("ullTotalVirtual", ctypes.c_ulonglong),
+                    ("ullAvailVirtual", ctypes.c_ulonglong),
+                    ("ullAvailExtendedVirtual", ctypes.c_ulonglong),
+                ]
+
+            status = MemoryStatusEx()
+            status.dwLength = ctypes.sizeof(MemoryStatusEx)
+            if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(status)):
+                return int(status.ullAvailPhys / (1024 * 1024))
+        except Exception:  # noqa: BLE001 - best effort
+            return None
+        return None
+    try:
+        with open("/proc/meminfo", encoding="utf-8") as handle:
+            for line in handle:
+                if line.startswith("MemAvailable:"):
+                    return int(line.split()[1]) // 1024
+    except OSError:
+        return None
+    return None
+
 def _env_with_binary(harness_id: str, extra: dict[str, str] | None = None) -> dict[str, str]:
     binary = binary_path(harness_id)
     bin_dir = str(Path(binary).parent) if binary else ""
@@ -203,6 +238,8 @@ def _env_with_binary(harness_id: str, extra: dict[str, str] | None = None) -> di
         "CI": "1",
         "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}" if bin_dir else os.environ.get("PATH", ""),
     }
+    if harness_id == "opencode":
+        env.setdefault("BUN_JSC_forceRAMSize", str(4 * 1024**3))
     if extra:
         env.update(extra)
     return env
