@@ -294,6 +294,7 @@ export function AppShell({ user, onUserChange, onLogout, onSessionEnded }: AppSh
   const [lightbox, setLightbox] = useState<{ src: string; alt: string } | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; preview: string } | null>(null)
   const [autoScroll, setAutoScroll] = useState(true)
+  const [lastLogAt, setLastLogAt] = useState(() => Date.now())
   const [ttsEnabled, setTtsEnabled] = useState(() => loadVoice().tts !== 'none')
   const fileInputRef = useRef<HTMLInputElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -317,6 +318,7 @@ export function AppShell({ user, onUserChange, onLogout, onSessionEnded }: AppSh
   const activeConversation = conversations.find((item) => item.id === activeId) ?? null
   const activeProject = projects.find((item) => item.id === activeProjectId) ?? null
   const jobProgress = useMemo(() => (job ? humanizeProgress(job.log) : null), [job])
+  const idleMinutes = Math.max(0, Math.floor((Date.now() - lastLogAt) / 60000))
 
   const refreshProviders = useCallback(async () => {
     const [providersResult, ollamaResult, opencodeResult, harnessResult] =
@@ -848,6 +850,8 @@ export function AppShell({ user, onUserChange, onLogout, onSessionEnded }: AppSh
     const startedAt = Date.now()
     localStorage.setItem('interpres_job', JSON.stringify({ id: jobId, conversationId }))
     setJob({ id: jobId, log: [], status: 'running' })
+    setLastLogAt(Date.now())
+    let lastSignature = ''
 
     while (true) {
       await new Promise((resolve) => setTimeout(resolve, 700))
@@ -867,6 +871,11 @@ export function AppShell({ user, onUserChange, onLogout, onSessionEnded }: AppSh
         continue
       }
 
+      const signature = `${data.log.length}:${data.log[data.log.length - 1] ?? ''}`
+      if (signature !== lastSignature) {
+        lastSignature = signature
+        setLastLogAt(Date.now())
+      }
       setJob({ id: jobId, log: data.log, status: data.status })
       if (data.status === 'running') {
         if (Date.now() - startedAt > 180 * 60 * 1000) {
@@ -1284,6 +1293,12 @@ export function AppShell({ user, onUserChange, onLogout, onSessionEnded }: AppSh
                           }`
                         : 'Trabalhando…'}
                     </pre>
+                    {job && idleMinutes >= 8 ? (
+                      <p className="mt-1 text-[10px] leading-4 text-amber-300">
+                        Sem novas linhas há {idleMinutes} min. Se continuar assim, cancele e peça
+                        para continuar de onde parou.
+                      </p>
+                    ) : null}
                   </details>
                 </div>
               ) : null}
