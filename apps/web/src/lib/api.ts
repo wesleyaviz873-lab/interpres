@@ -260,6 +260,49 @@ export type HarnessTestResult = {
   output: string
 }
 
+export type MemoryProcess = {
+  pid: number
+  name: string
+  mb: number
+}
+
+export type MemoryTarget = {
+  id: string
+  label: string
+  mb: number
+  processes: number
+}
+
+export type MemoryStatus = {
+  total_mb: number
+  used_mb: number
+  available_mb: number
+  percent: number
+  top: MemoryProcess[]
+  targets: MemoryTarget[]
+  closed: Array<{ target: string; exe: string }>
+}
+
+export type MemoryPolicy = {
+  auto: boolean
+  threshold_mb: number
+  targets: string[]
+}
+
+export type FreeMemoryResponse = {
+  before_mb: number
+  after_mb: number
+  freed_mb: number
+  actions: string[]
+  errors: string[]
+  closed: Array<{ target: string; exe: string }>
+}
+
+export type RestoreMemoryResponse = {
+  started: string[]
+  errors: string[]
+}
+
 export type HealthResponse = {
   status: string
   service: string
@@ -686,6 +729,34 @@ export const api = {
   testHarness(id: string): Promise<HarnessTestResult> {
     return request<HarnessTestResult>(`/api/harnesses/${encodeURIComponent(id)}/test`, {
       method: 'POST',
+    })
+  },
+
+  memoryStatus(): Promise<MemoryStatus> {
+    return request<MemoryStatus>('/api/system/memory')
+  },
+
+  freeMemory(targets: string[]): Promise<FreeMemoryResponse> {
+    return request<FreeMemoryResponse>('/api/system/memory/free', {
+      method: 'POST',
+      body: JSON.stringify({ targets }),
+    })
+  },
+
+  restoreMemory(): Promise<RestoreMemoryResponse> {
+    return request<RestoreMemoryResponse>('/api/system/memory/restore', {
+      method: 'POST',
+    })
+  },
+
+  memoryPolicy(): Promise<MemoryPolicy> {
+    return request<MemoryPolicy>('/api/system/memory/policy')
+  },
+
+  saveMemoryPolicy(policy: MemoryPolicy): Promise<MemoryPolicy> {
+    return request<MemoryPolicy>('/api/system/memory/policy', {
+      method: 'PUT',
+      body: JSON.stringify(policy),
     })
   },
 

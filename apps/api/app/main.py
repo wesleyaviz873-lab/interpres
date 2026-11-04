@@ -24,6 +24,7 @@ from .routes import (
     projects,
     providers,
     screenshots,
+    system_memory as system_memory_routes,
     transcribe,
     tunnel,
     uploads,
@@ -111,6 +112,7 @@ app.include_router(projects.router)
 app.include_router(uploads.router)
 app.include_router(transcribe.router)
 app.include_router(screenshots.router)
+app.include_router(system_memory_routes.router)
 app.include_router(agents.router)
 app.include_router(tunnel.router)
 app.include_router(harnesses.router)

@@ -13,6 +13,8 @@ import {
   type HarnessInfo,
   type HarnessTestResult,
   type HealthResponse,
+  type MemoryPolicy,
+  type MemoryStatus,
   type OllamaModelsResponse,
   type ProviderInfo,
   type RecoveryMethods,
@@ -116,8 +118,8 @@ const SECTIONS: SectionDefinition[] = [
   },
   {
     id: 'memoria',
-    label: 'Memória do Projeto',
-    description: 'Contexto por workspace e projeto.',
+    label: 'Memória',
+    description: 'RAM da máquina, fila e liberação antes de executar.',
     Icon: Database,
   },
   {
@@ -262,7 +264,7 @@ export function SettingsModal({
             ) : null}
             {section === 'voz' ? <VoiceSection /> : null}
             {section === 'harnesses' ? <HarnessesSection /> : null}
-            {section === 'memoria' ? <ProjectMemorySection /> : null}
+            {section === 'memoria' ? <MemorySection /> : null}
             {section === 'backend' ? <BackendSection /> : null}
             {section === 'tunel' ? <TunnelSection /> : null}
             {section === 'aparencia' ? <AppearanceSection /> : null}
@@ -1818,12 +1820,282 @@ function HarnessRow({ harness, onChange, onRefresh }: HarnessRowProps) {
   )
 }
 
-function ProjectMemorySection() {
+function MemorySection() {
+  const [status, setStatus] = useState<MemoryStatus | null>(null)
+  const [policy, setPolicy] = useState<MemoryPolicy | null>(null)
+  const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
+  const [busy, setBusy] = useState<string | null>(null)
+  const [pending, setPending] = useState<string | null>(null)
+
+  const refresh = useCallback(async () => {
+    try {
+      const [memory, saved] = await Promise.all([api.memoryStatus(), api.memoryPolicy()])
+      setStatus(memory)
+      setPolicy(saved)
+      setError('')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Não consegui ler a memória.')
+    }
+  }, [])
+
+  useEffect(() => {
+    void refresh()
+  }, [refresh])
+
+  async function handleFree(target: string) {
+    setBusy(target)
+    setNotice('')
+    try {
+      const result = await api.freeMemory([target])
+      setNotice(
+        `Liberado ${result.freed_mb} MB. ${result.actions.join(' ')}${
+          result.errors.length ? ` Avisos: ${result.errors.join(' ')}` : ''
+        }`,
+      )
+      await refresh()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Não consegui liberar memória.')
+    } finally {
+      setBusy(null)
+      setPending(null)
+    }
+  }
+
+  async function handleRestore() {
+    setBusy('restore')
+    try {
+      const result = await api.restoreMemory()
+      setNotice(
+        result.started.length
+          ? `Reabri: ${result.started.join(', ')}`
+          : 'Nenhum app para reabrir.',
+      )
+      await refresh()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Não consegui reabrir os apps.')
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  function updatePolicy(patch: Partial<MemoryPolicy>) {
+    if (!policy) return
+    const next = { ...policy, ...patch }
+    setPolicy(next)
+    void api.saveMemoryPolicy(next).catch((err) => {
+      setError(err instanceof Error ? err.message : 'Não consegui salvar a política.')
+    })
+  }
+
+  const availableGb = status ? (status.available_mb / 1024).toFixed(1) : '—'
+  const totalGb = status ? (status.total_mb / 1024).toFixed(1) : '—'
+
   return (
-    <Card title="Memória do projeto">
-      <p className="text-[11px] leading-4 text-muted">
-        Contexto por workspace e projeto chega no próximo bloco. Nada é armazenado por esta tela.
-      </p>
+    <Card
+      title="Memória"
+      description="Prioridade ao Interpres: libere RAM de apps pesados antes de rodar um harness."
+      action={
+        <Button
+          type="button"
+          size="sm"
+          fullWidth={false}
+          variant="secondary"
+          onClick={() => {
+            void refresh()
+          }}
+        >
+          <Refresh className="h-3.5 w-3.5" />
+          Atualizar
+        </Button>
+      }
+    >
+      {error ? <ErrorBanner message={error} /> : null}
+      {notice ? (
+        <p className="rounded-lg border border-emerald-500/25 bg-emerald-500/10 px-2.5 py-1.5 text-[10.5px] leading-4 text-emerald-200">
+          {notice}
+        </p>
+      ) : null}
+
+      {status ? (
+        <>
+          <div className="rounded-lg border border-line bg-ink/40 p-3">
+            <div className="flex items-baseline justify-between gap-3">
+              <p className="text-[12px] font-medium text-paper">
+                {availableGb} GB livres de {totalGb} GB
+              </p>
+              <p className="text-[10.5px] text-muted">{status.percent}% em uso</p>
+            </div>
+            <div className="mt-2 h-2 overflow-hidden rounded-full bg-white/5">
+              <div
+                className={`h-full rounded-full ${
+                  status.percent > 90
+                    ? 'bg-red-500'
+                    : status.percent > 75
+                      ? 'bg-amber-400'
+                      : 'bg-emerald-400'
+                }`}
+                style={{ width: `${Math.min(100, status.percent)}%` }}
+              />
+            </div>
+            {status.closed.length > 0 ? (
+              <button
+                type="button"
+                onClick={() => {
+                  void handleRestore()
+                }}
+                disabled={busy !== null}
+                className="mt-2 text-[10.5px] font-medium text-accent hover:underline disabled:opacity-50"
+              >
+                Reabrir {status.closed.length} app(s) fechado(s)
+              </button>
+            ) : null}
+          </div>
+
+          <div>
+            <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted">
+              Maiores consumidores
+            </p>
+            <ul className="divide-y divide-line overflow-hidden rounded-lg border border-line bg-ink/40">
+              {status.top.map((process) => (
+                <li
+                  key={`${process.pid}-${process.name}`}
+                  className="flex items-center gap-2 px-2.5 py-1.5"
+                >
+                  <span className="min-w-0 flex-1 truncate text-[11px] text-paper/90">
+                    {process.name}
+                  </span>
+                  <span className="shrink-0 text-[10px] text-muted">{process.mb} MB</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          <div>
+            <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted">
+              Liberar agora
+            </p>
+            <ul className="divide-y divide-line overflow-hidden rounded-lg border border-line bg-ink/40">
+              {status.targets.map((target) => (
+                <li key={target.id} className="flex flex-wrap items-center gap-2 px-2.5 py-1.5">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[11.5px] font-medium text-paper/90">{target.label}</p>
+                    <p className="text-[10px] text-muted">
+                      {target.mb} MB · {target.processes} processo(s)
+                    </p>
+                  </div>
+                  {pending === target.id ? (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          void handleFree(target.id)
+                        }}
+                        disabled={busy !== null}
+                        className="rounded-md bg-red-500 px-2 py-1 text-[10.5px] font-semibold text-white hover:bg-red-400 disabled:opacity-50"
+                      >
+                        Confirmar
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setPending(null)}
+                        className="rounded-md border border-line px-2 py-1 text-[10.5px] text-muted hover:text-paper"
+                      >
+                        Cancelar
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setPending(target.id)}
+                      disabled={busy !== null || target.processes === 0}
+                      className="rounded-md border border-line px-2 py-1 text-[10.5px] font-medium text-muted transition-colors hover:border-white/25 hover:text-paper disabled:opacity-40"
+                    >
+                      {busy === target.id ? 'Liberando…' : 'Liberar'}
+                    </button>
+                  )}
+                </li>
+              ))}
+            </ul>
+            <p className="mt-1.5 text-[10px] leading-4 text-muted">
+              Fechar um app libera RAM; suspender não libera. O WSL desliga junto com os serviços
+              que estiverem rodando nele.
+            </p>
+          </div>
+        </>
+      ) : (
+        <p className="text-[11px] text-muted">Lendo memória...</p>
+      )}
+
+      {policy ? (
+        <div className="rounded-lg border border-line bg-ink/40 p-3">
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-[12px] font-medium text-paper">
+                Liberar memória automaticamente
+              </p>
+              <p className="text-[10.5px] leading-4 text-muted">
+                Antes de executar um harness, se a RAM livre estiver abaixo do limite.
+              </p>
+            </div>
+            <Switch
+              label="Liberar memória automaticamente antes de executar"
+              checked={policy.auto}
+              onChange={(next) => updatePolicy({ auto: next })}
+            />
+          </div>
+
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <label className="flex items-center gap-1.5 text-[10.5px] text-muted">
+              Limite
+              <input
+                type="number"
+                min={256}
+                max={16384}
+                step={256}
+                value={policy.threshold_mb}
+                onChange={(event) =>
+                  updatePolicy({ threshold_mb: Number(event.target.value) || 1500 })
+                }
+                className="w-20 rounded-md border border-line bg-ink px-2 py-1 text-[11px] text-paper focus:border-accent/70 focus:outline-none"
+              />
+              MB livres
+            </label>
+          </div>
+
+          <div className="mt-2 flex flex-col gap-1.5">
+            {['opencode-desktop', 'chatgpt', 'wsl'].map((targetId) => (
+              <label
+                key={targetId}
+                className="flex items-center gap-2 text-[10.5px] text-paper/80"
+              >
+                <input
+                  type="checkbox"
+                  checked={policy.targets.includes(targetId)}
+                  onChange={(event) => {
+                    const next = event.target.checked
+                      ? [...policy.targets, targetId]
+                      : policy.targets.filter((item) => item !== targetId)
+                    updatePolicy({ targets: next })
+                  }}
+                  className="h-3.5 w-3.5 rounded border-line bg-ink"
+                />
+                {targetId === 'opencode-desktop'
+                  ? 'Fechar OpenCode (app)'
+                  : targetId === 'chatgpt'
+                    ? 'Fechar ChatGPT / Codex'
+                    : 'Desligar WSL (serviços param)'}
+              </label>
+            ))}
+          </div>
+
+          <p className="mt-2 text-[10px] leading-4 text-muted">
+            Os apps fechados por essa política são reabertos quando a execução termina. O WSL não
+            é reiniciado automaticamente. Android Studio não entra na automação; feche manualmente
+            pelo painel acima se precisar.
+          </p>
+        </div>
+      ) : null}
     </Card>
   )
 }

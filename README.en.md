@@ -89,6 +89,7 @@ the provider/model you select; Hermes covers the model-agnostic case.
 
 ### Operations
 - Optional tunnel: Cloudflare quick link (no account), Cloudflare token and ngrok.
+- Memory panel: top consumers, free RAM by closing WSL/apps, optional auto-free before a harness.
 - SQLite with Alembic migrations (PostgreSQL is a planned option).
 - Security headers and production CSP.
 - Healthcheck at `/api/health`.

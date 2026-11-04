@@ -89,6 +89,7 @@ provedor/modelo escolhido; o Hermes cobre o caso de modelo livre.
 
 ### Operação
 - Túnel opcional: Cloudflare rápido (sem conta), Cloudflare com token e ngrok.
+- Painel de memória: mostra os maiores consumidores, libera RAM (WSL/apps) e pode fazer isso antes de um harness.
 - SQLite com migrações Alembic (PostgreSQL é opção futura).
 - Cabeçalhos de segurança e CSP em produção.
 - Healthcheck em `/api/health`.

@@ -17,7 +17,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .. import jobs, tool_tokens
+from .. import jobs, system_memory, tool_tokens
 from ..auth import require_csrf, require_user
 from ..database import SessionLocal, get_db
 from ..harnesses import (
@@ -455,15 +455,34 @@ def _execute_chat(
         if _HARNESS_LOCK.locked() and on_line:
             on_line("Aguardando outra execução terminar...")
         with _HARNESS_LOCK:
-            reply, session, process = _run_harness(
-                db,
-                conversation,
-                harness_id,
-                tool_env,
-                attachments,
-                on_line,
-                cancel_event,
-            )
+            auto_freed = False
+            policy = system_memory.load_policy()
+            try:
+                threshold = int(policy.get("threshold_mb", 1500))
+            except (TypeError, ValueError):
+                threshold = 1500
+            if policy.get("auto") and available_memory_mb() < threshold:
+                freed = system_memory.free_memory(list(policy.get("targets") or []))
+                auto_freed = True
+                if on_line:
+                    on_line(
+                        "Memória livre baixa: liberei "
+                        f"{freed.get('freed_mb', 0)} MB. "
+                        + " ".join(str(item) for item in freed.get("actions") or [])
+                    )
+            try:
+                reply, session, process = _run_harness(
+                    db,
+                    conversation,
+                    harness_id,
+                    tool_env,
+                    attachments,
+                    on_line,
+                    cancel_event,
+                )
+            finally:
+                if auto_freed:
+                    system_memory.restore_apps()
         conversation.harness = harness_id
         if session:
             conversation.harness_session = session
